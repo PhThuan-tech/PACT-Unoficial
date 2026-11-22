@@ -1,0 +1,40 @@
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+
+# Virtual environments and local secrets
+.venv/
+venv/
+env/
+.env
+!.env.example
+
+# Downloaded datasets and generated results
+/data/
+/output/
+/outputs/
+/checkpoints/
+
+# Model weights and checkpoints
+*.pt
+*.pth
+*.ckpt
+
+# Build/package artifacts
+/dist/
+/build/
+*.egg-info/
+
+# Test, type-check, and notebook caches
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+.ipynb_checkpoints/
+
+# Logs and OS/editor files
+*.log
+.DS_Store
+Thumbs.db

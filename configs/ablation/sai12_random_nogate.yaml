@@ -1,0 +1,6 @@
+# Bảng 5: "+ SAI (1)(2)": adapter kiểu MLP khởi tạo ngẫu nhiên, không gate (paper: sập, ~1.24 / 6.09 / 9.83)
+setting: mtil
+output_dir: outputs/ablation_sai12
+mtil: {order: I}
+adapter: {clone_mlp: false, use_gate: false}
+pact: {use_marg: false, use_pa: false}

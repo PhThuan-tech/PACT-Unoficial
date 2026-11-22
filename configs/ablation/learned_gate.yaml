@@ -1,0 +1,6 @@
+# PACT với gate sigmoid HỌC ĐƯỢC (cách đọc main paper, bản repo cũ) thay cho lịch cố định theo tầng
+# của supplement. Dùng để so với cấu hình chính.
+setting: mtil
+output_dir: outputs/ablation_learned_gate
+mtil: {order: I}
+adapter: {gate_mode: learned, gate_init_mode: preserve}

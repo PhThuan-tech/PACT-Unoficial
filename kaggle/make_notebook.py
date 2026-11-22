@@ -1,0 +1,432 @@
+"""Generate kaggle/pact_demo.ipynb:  python kaggle/make_notebook.py kaggle/pact_demo.ipynb"""
+import json
+import os
+import sys
+
+cells = []
+
+
+def md(s):
+    cells.append({"cell_type": "markdown", "metadata": {}, "source": s.strip("\n")})
+
+
+def code(s):
+    cells.append({"cell_type": "code", "metadata": {}, "execution_count": None, "outputs": [],
+                  "source": s.strip("\n")})
+
+
+md(r"""
+# PACT (unofficial) – demo trên Kaggle, chạy offline, nhiều GPU
+
+Notebook này chạy lại repo PACT (CVPR 2026, bản tự cài đặt) trên Kaggle: **Internet tắt**, GPU 4×L4 (hoặc 2×T4).
+
+**Input cần gắn (Add Input):**
+
+| Input | Nội dung |
+|---|---|
+| `pact-code` (bạn tự upload) | file `pact-code.zip` (code + wheel, ~2 MB), tạo bằng `python tools/prepare_upload.py`. Upload lại mỗi khi code đổi |
+| `pact-kit` hoặc `pact-clip` | trọng số CLIP (upload một lần). Dataset `pact-kit` cũ dùng được; code cũ bên trong sẽ bị bỏ qua vì notebook chọn bản code mới nhất |
+| Dataset ảnh | Một bản Kaggle cho mỗi dataset cần dùng (gợi ý ở bảng dưới). Script tự dò file đặc trưng, nên **không cần đúng cấu trúc thư mục** |
+
+Preset `quick` chỉ cần **Aircraft, DTD, EuroSAT, OxfordPet**. Preset `full` cần đủ 11 dataset MTIL.
+
+**Cấu hình mặc định bám theo supplementary của paper** (xem `reports/Giải mã chi tiết PACT.md`):
+- Đánh giá theo snapshot của từng task (Bảng 8: độ chính xác task đã học không đổi).
+- Gate cố định tăng theo tầng, tầng cuối 0.5.
+- Hai head học được cho mỗi task.
+- α̃ bật bằng công tắc cứng (Eq. 40–44).
+- Label smoothing 0.2, eval bằng ensemble template, fp32.
+
+Mỗi run tính cùng lúc 4 giao thức đánh giá: `router`, `oracle_latest`, `oracle_zeroshot` và `latest` (cách cũ).
+
+| Dataset | Gợi ý trên Kaggle (chưa kiểm hết cấu trúc; ô 4 sẽ báo nếu thiếu file) |
+|---|---|
+| Aircraft | `howardkhh/fgvc-aircraft`, `seryouxblaster764/fgvc-aircraft` |
+| Caltech101 | `imbikramsaha/caltech-101` |
+| CIFAR100 | `fedesoriano/cifar100` (bản pickle `train/test/meta`) |
+| DTD | `jmexpert/describable-textures-dataset-dtd` |
+| EuroSAT | bản **RGB .jpg**, ví dụ `apollo2506/eurosat-dataset`, `waseemalastal/eurosat-rgb-dataset` |
+| Flowers | cần `jpg/` + `imagelabels.mat` + `setid.mat` (bản gốc Oxford) |
+| Food | `dansbecker/food-101` |
+| MNIST | `hojjatk/mnist-dataset` hoặc bản có 4 file idx gốc (không phải Fashion-MNIST) |
+| OxfordPet | `julinmaloof/the-oxfordiiit-pet-dataset` |
+| StanfordCars | `rickyyyyyyy/torchvision-stanford-cars` (đã đúng cấu trúc torchvision) |
+| SUN397 | cần bản gốc (`ClassName.txt` cạnh `a/ b/ ...`); chưa thấy bản đầy đủ trên Kaggle, có thể phải tự upload |
+| TinyImageNet (CIL) | `akash2sharma/tiny-imagenet` |
+
+**Chạy dài (full):** dùng *Save Version → Save & Run All*. Phiên Kaggle có giới hạn thời gian; checkpoint được lưu sau mỗi task (xem ô cuối để chạy tiếp).
+""")
+
+code(r"""
+# ===================== CẤU HÌNH =====================
+PRESET = "quick"        # "quick": 4 dataset, 1000 iter | "full": thiết lập paper (11 dataset, 3000 iter)
+GPUS_PER_RUN = 1        # số GPU cho MỖI cấu hình (1, 2 hoặc 4); GPUS_PER_RUN x số cấu hình <= số GPU
+EXPERIMENTS = [         # (tên, file config, override thêm)
+    ("pact_paper",        "configs/mtil_order1.yaml",           []),                  # cách đọc supplement
+    ("pact_lr5e-5",       "configs/mtil_order1.yaml",           ["train.lr=5e-5"]),   # lr chưa biết: quét
+    ("pact_learned_gate", "configs/ablation/learned_gate.yaml", []),                  # gate học được (bản cũ)
+    ("pact_text_head",    "configs/mtil_order1.yaml",           ["head.type=text"]),  # không có head học được
+]
+RESUME_FROM = None      # chạy tiếp: thư mục outputs/ của version trước (đã gắn làm input)
+RUN_ZERO_SHOT_CHECK = True
+
+WORK = "/kaggle/working"
+REPO = f"{WORK}/PACT"
+DATA_ROOT = f"{WORK}/data"
+OUT = f"{WORK}/outputs"
+
+PRESETS = {
+    "quick": dict(order=["Aircraft", "DTD", "EuroSAT", "OxfordPet"],
+                  extra=["train.iterations=1000", "eval.max_samples=1000", "train.log_every=25"]),
+    "full":  dict(order=["Aircraft", "Caltech101", "CIFAR100", "DTD", "EuroSAT", "Flowers", "Food",
+                         "MNIST", "OxfordPet", "StanfordCars", "SUN397"],
+                  extra=[]),
+}
+ORDER = PRESETS[PRESET]["order"]
+print("preset:", PRESET, "| datasets:", ORDER)
+""")
+
+code(r"""
+# ===================== 1. Tìm pact-kit, cài wheel offline, giải nén repo =====================
+import os, sys, json, time, shutil, zipfile, subprocess, importlib
+
+def walk_limited(root, max_depth=6, max_entries=300):
+    # os.walk giới hạn độ sâu, bỏ qua thư mục ảnh lớn (không quét hàng trăm nghìn file)
+    base = root.rstrip("/").count("/")
+    for path, dirs, files in os.walk(root):
+        if path.count("/") - base >= max_depth or len(dirs) + len(files) > max_entries:
+            dirs[:] = []
+        yield path, dirs, files
+
+
+CLIP_NAME = "ViT-B-16-quickgelu-openai.pt"
+KIT_WHEELS = ("open_clip_torch-", "ftfy-")   # chỉ cài đúng 2 wheel này, bỏ qua wheel của input khác
+KIT_ZIPS = ("pact-kit.zip", "pact-code.zip", "pact-clip.zip")
+
+def scan(roots):
+    # CLIP: lấy ở bất kỳ input nào. Code: mọi thư mục PACT/ (cũ trong pact-kit, mới trong pact-code)
+    found = dict(clip=None, codes=[], zips=[])
+    for root in roots:
+        if not os.path.isdir(root): continue
+        for path, dirs, files in walk_limited(root):
+            if found["clip"] is None and CLIP_NAME in files:
+                found["clip"] = os.path.join(path, CLIP_NAME)
+            if os.path.isfile(os.path.join(path, "pact", "engine.py")):
+                found["codes"].append(path)
+            found["zips"] += [os.path.join(path, f) for f in files if f in KIT_ZIPS]
+    return found
+
+def build_time(code_dir):   # bản code mới nhất thắng; bản cũ không có BUILD_INFO.json
+    try: return json.load(open(os.path.join(code_dir, "BUILD_INFO.json")))["built"]
+    except Exception: return ""
+
+ROOTS = ["/kaggle/input", f"{WORK}/_kits"]
+found = scan(ROOTS)
+extracted = False
+for zp in found["zips"]:   # Kaggle giữ nguyên file zip: pact-code (nhỏ) luôn giải nén,
+    name = os.path.basename(zp)[:-4]   # zip lớn (pact-kit, pact-clip) chỉ khi còn thiếu CLIP/code
+    dest = f"{WORK}/_kits/{name}"
+    if os.path.isdir(dest) or not (name == "pact-code" or not found["clip"] or not found["codes"]):
+        continue
+    print("giải nén", zp, "->", dest)
+    with zipfile.ZipFile(zp) as z: z.extractall(dest)
+    extracted = True
+if extracted:
+    found = scan(ROOTS)
+assert found["clip"], "Không thấy trọng số CLIP: gắn dataset pact-kit (hoặc pact-clip)"
+assert found["codes"], "Không thấy code: gắn dataset pact-code (hoặc pact-kit)"
+clip_w = found["clip"]
+clip_ref = os.path.join(os.path.dirname(clip_w), "reference.pt")
+code_src = max(found["codes"], key=build_time)
+CODE_ROOT = os.path.dirname(code_src)          # dataset chứa code; wheel lấy ở đây trước
+
+def find_wheels(roots):
+    wheels, wheel_dirs = [], []
+    for root in roots:
+        for path, dirs, files in walk_limited(root):
+            if any(os.path.isfile(os.path.join(path, p, "__init__.py")) for p in ("open_clip", "ftfy")):
+                wheel_dirs.append(path)        # Kaggle đã giải nén luôn file .whl
+            wheels += [os.path.join(path, f) for f in files
+                       if f.endswith(".whl") and f.startswith(KIT_WHEELS)]
+    return wheels, wheel_dirs
+wheels, wheel_dirs = find_wheels([CODE_ROOT])
+if not (wheels or wheel_dirs):
+    wheels, wheel_dirs = find_wheels(ROOTS)
+wheels = list({os.path.basename(w): w for w in wheels}.values())   # mỗi file 1 lần
+
+print("code     :", code_src, "| build:", build_time(code_src) or "(bản cũ)",
+      f"| {len(found['codes'])} bản tìm thấy")
+print("wheels   :", [os.path.basename(w) for w in wheels] or wheel_dirs)
+print("clip     :", clip_w, "| reference:", os.path.exists(clip_ref))
+assert os.path.exists(clip_ref), "thiếu clip/reference.pt cạnh trọng số CLIP"
+
+if os.path.exists(REPO): shutil.rmtree(REPO)
+shutil.copytree(code_src, REPO)
+os.chdir(REPO); sys.path.insert(0, REPO)
+
+if wheels:
+    subprocess.run([sys.executable, "-m", "pip", "install", "--no-index", "--no-deps", "-q",
+                    *wheels], check=True)
+elif wheel_dirs:   # wheel đã bị giải nén thành thư mục: dùng trực tiếp qua PYTHONPATH
+    sys.path[:0] = wheel_dirs
+    os.environ["PYTHONPATH"] = os.pathsep.join(wheel_dirs + [os.environ.get("PYTHONPATH", "")])
+importlib.invalidate_caches()
+missing = []
+for mod in ["torch", "torchvision", "open_clip", "ftfy", "wcwidth", "regex", "timm", "huggingface_hub", "scipy", "yaml"]:
+    try:
+        m = importlib.import_module(mod); print(f"  {mod:16s} {getattr(m, '__version__', 'ok')}")
+    except Exception as e:
+        missing.append(mod); print(f"  {mod:16s} THIẾU: {e}")
+assert not missing, f"Thiếu thư viện {missing}: thêm wheel của chúng vào pact-kit/wheels"
+""")
+
+code(r"""
+# ===================== 2. Phần cứng =====================
+import torch
+n_gpu = torch.cuda.device_count()
+print("GPU:", n_gpu, [torch.cuda.get_device_name(i) for i in range(n_gpu)])
+print("bf16:", n_gpu > 0 and torch.cuda.is_bf16_supported(), "| CPU:", os.cpu_count(),
+      "| disk trống (GB):", round(shutil.disk_usage(WORK).free / 2**30, 1))
+n_procs = GPUS_PER_RUN * len(EXPERIMENTS)
+assert n_gpu >= n_procs, f"Cần {n_procs} GPU (GPUS_PER_RUN x số cấu hình), máy có {n_gpu}"
+NUM_WORKERS = max(2, min(8, (os.cpu_count() or 4) // n_procs))
+print("num_workers mỗi process:", NUM_WORKERS)
+subprocess.run(["nvidia-smi", "--query-gpu=index,name,memory.total", "--format=csv"])
+""")
+
+code(r"""
+# ===================== 3. Kiểm tra trọng số CLIP (đúng QuickGELU, file không hỏng) =====================
+r = subprocess.run([sys.executable, "-W", "ignore", "tools/clip_offline.py", "verify",
+                    "--weights", clip_w, "--reference", clip_ref], capture_output=True, text=True)
+print(r.stdout[-2000:], r.stderr[-2000:])
+assert r.returncode == 0, "Trọng số CLIP không khớp reference"
+""")
+
+code(r"""
+# ===================== 4. Dò dataset trong /kaggle/input, dựng data_root (symlink) =====================
+# Nếu một dataset không được nhận ra, thêm: "--map", "Tên=/kaggle/input/<thư mục>" để chỉ chỗ tìm.
+r = subprocess.run([sys.executable, "tools/kaggle_data.py", "--input", "/kaggle/input",
+                    "--data-root", DATA_ROOT, "--datasets", *ORDER, "--check"],
+                   capture_output=True, text=True)
+print(r.stdout[-6000:], r.stderr[-3000:])
+assert r.returncode == 0, "Có dataset thiếu/lỗi (xem ở trên)"
+""")
+
+code(r"""
+# ===================== 5. Tham số chung cho mọi run =====================
+COMMON = [f"data_root={DATA_ROOT}", "download=false", f"num_workers={NUM_WORKERS}",
+          "model.arch=ViT-B-16-quickgelu", f"model.pretrained={clip_w}",
+          "mtil.order=[" + ",".join(ORDER) + "]", *PRESETS[PRESET]["extra"]]
+print("\n".join(COMMON))
+""")
+
+code(r"""
+# ===================== 6. Zero-shot: so với dòng CLIP zero-shot ở Bảng 1 =====================
+# Kiểm tra dữ liệu, tên lớp, template, trọng số trước khi train (rẻ, 1 GPU, toàn bộ tập test).
+# Đo cả 2 cách dựng text classifier: template đầu ("first") và ensemble mọi template (mặc định eval).
+PAPER_ZS = {"Aircraft": 24.3, "Caltech101": 88.4, "CIFAR100": 68.2, "DTD": 44.6, "EuroSAT": 54.9,
+            "Flowers": 71.0, "Food": 88.5, "MNIST": 59.4, "OxfordPet": 89.0, "StanfordCars": 64.7,
+            "SUN397": 65.2}
+if RUN_ZERO_SHOT_CHECK:
+    zs_out = f"{OUT}/zero_shot"
+    cmd = [sys.executable, "-m", "pact.run_mtil", "--set", *COMMON, "adapter.type=none",
+           f"output_dir={zs_out}", "eval.max_samples=null"]
+    r = subprocess.run(cmd, capture_output=True, text=True,
+                       env={**os.environ, "CUDA_VISIBLE_DEVICES": "0"})
+    if r.returncode:
+        print(r.stdout[-3000:], r.stderr[-3000:])
+    else:
+        res = json.load(open(f"{zs_out}/results.json"))
+        by = res["zero_shot_by_template"]
+        print(f"{'dataset':14s}{'first':>8s}{'ensemble':>10s}{'paper':>8s}{'lệch(ens)':>11s}")
+        for i, n in enumerate(res["order"]):
+            a1, a2 = by["first"][i], by["ensemble"][i]
+            flag = "  <-- lệch > 1.5 điểm" if abs(a2 - PAPER_ZS[n]) > 1.5 else ""
+            print(f"{n:14s}{a1:8.2f}{a2:10.2f}{PAPER_ZS[n]:8.1f}{a2 - PAPER_ZS[n]:+11.2f}{flag}")
+        m1 = sum(abs(by["first"][i] - PAPER_ZS[n]) for i, n in enumerate(res["order"]))
+        m2 = sum(abs(by["ensemble"][i] - PAPER_ZS[n]) for i, n in enumerate(res["order"]))
+        print(f"tổng |lệch|: first={m1:.2f}  ensemble={m2:.2f}  -> khớp paper hơn: "
+              f"{'ensemble' if m2 <= m1 else 'first (cân nhắc thêm eval.template_mode=first vào COMMON)'}")
+""")
+
+code(r"""
+# ===================== 7. Khởi chạy các cấu hình song song =====================
+os.makedirs(OUT, exist_ok=True)
+if RESUME_FROM:   # chép checkpoint của version trước để chạy tiếp
+    for name, _, _ in EXPERIMENTS:
+        src = os.path.join(RESUME_FROM, name)
+        if os.path.isdir(src):
+            shutil.copytree(src, os.path.join(OUT, name), dirs_exist_ok=True); print("resume:", name)
+
+PROCS = {}
+for i, (name, config, extra) in enumerate(EXPERIMENTS):
+    gpus = ",".join(str(g) for g in range(i * GPUS_PER_RUN, (i + 1) * GPUS_PER_RUN))
+    run_dir = os.path.join(OUT, name); os.makedirs(run_dir, exist_ok=True)
+    launcher = ([sys.executable, "-m"] if GPUS_PER_RUN == 1 else
+                ["torchrun", "--standalone", f"--nproc_per_node={GPUS_PER_RUN}", "-m"])
+    cmd = [*launcher, "pact.run_mtil", "--config", config, "--resume",
+           "--set", *COMMON, f"output_dir={run_dir}", *extra]
+    stdout = open(os.path.join(run_dir, "stdout.log"), "a")
+    PROCS[name] = subprocess.Popen(cmd, stdout=stdout, stderr=subprocess.STDOUT, cwd=REPO,
+                                   env={**os.environ, "CUDA_VISIBLE_DEVICES": gpus})
+    print(f"[{name}] GPU {gpus} | log: {run_dir}/stdout.log")
+""")
+
+code(r"""
+# ===================== 8. Theo dõi (ô này chặn tới khi xong: cần cho Save & Run All) =====================
+def last_record(name):
+    path = os.path.join(OUT, name, "log.jsonl")
+    if not os.path.exists(path): return {}
+    with open(path) as f: lines = f.readlines()
+    return json.loads(lines[-1]) if lines else {}
+
+def tail(name, n=40):
+    with open(os.path.join(OUT, name, "stdout.log")) as f: return "".join(f.readlines()[-n:])
+
+INTERVAL = 120   # giây
+KEYS = ("task", "it", "L_cond", "phi", "alpha_tilde", "after_task", "mean")
+while True:
+    print(time.strftime("%H:%M:%S"), "-" * 60)
+    for name, p in PROCS.items():
+        rec = last_record(name)
+        brief = {k: (round(v, 4) if isinstance(v, float) else v) for k, v in rec.items() if k in KEYS}
+        state = "đang chạy" if p.poll() is None else f"xong (exit {p.returncode})"
+        print(f"  [{name}] {state} {brief}")
+    if all(p.poll() is not None for p in PROCS.values()): break
+    time.sleep(INTERVAL)
+for name, p in PROCS.items():
+    if p.returncode: print(f"\n==== {name} LỖI (exit {p.returncode}) ====\n{tail(name)}")
+""")
+
+code(r"""
+# ===================== 9. Đồ thị loss / alpha / gate =====================
+import matplotlib.pyplot as plt
+fig, axes = plt.subplots(len(EXPERIMENTS), 3, figsize=(16, 3.6 * len(EXPERIMENTS)), squeeze=False)
+for row, (name, _, _) in enumerate(EXPERIMENTS):
+    path = os.path.join(OUT, name, "log.jsonl")
+    if not os.path.exists(path): continue
+    recs = [json.loads(l) for l in open(path)]
+    recs = [r for r in recs if "it" in r]
+    if not recs: continue
+    tasks = list(dict.fromkeys(r["task"] for r in recs)); iters = max(r["it"] for r in recs) + 1
+    step = [tasks.index(r["task"]) * iters + r["it"] for r in recs]
+    for key, col in [("L_cond", 0), ("L_marg", 0), ("L_pa", 0), ("alpha", 1), ("alpha_tilde", 1), ("phi", 2)]:
+        pts = [(s, r[key]) for s, r in zip(step, recs) if key in r]
+        if pts: axes[row][col].plot(*zip(*pts), label=key, lw=1)
+    for ax, title in zip(axes[row], ["loss", "alpha / alpha_tilde", "phi (Eq. 43)"]):
+        ax.set_title(f"{name}: {title}"); ax.legend(fontsize=8)
+        for t in range(1, len(tasks)): ax.axvline(t * iters, color="gray", lw=0.4)
+plt.tight_layout(); plt.show()
+""")
+
+code(r"""
+# ===================== 10. Kết quả: mọi giao thức đánh giá, so với paper =====================
+PAPER_SUMMARY = (71.76, 81.05, 90.54)   # PACT, MTIL Order-I (Bảng 1)
+PAPER_LAST = {"Aircraft": 65.58, "Caltech101": 96.60, "CIFAR100": 91.21, "DTD": 80.53, "EuroSAT": 97.98,
+              "Flowers": 98.59, "Food": 93.81, "MNIST": 99.53, "OxfordPet": 95.66, "StanfordCars": 89.90,
+              "SUN397": 86.60}          # Bảng 8 (supp), hàng cuối = độ chính xác ngay sau khi học task đó
+for name, _, _ in EXPERIMENTS:
+    path = os.path.join(OUT, name, "results.json")
+    if not os.path.exists(path): print(f"{name}: chưa có results.json"); continue
+    res = json.load(open(path)); order = res["order"]
+    print(f"===== {name}")
+    for proto, r in res.get("protocols", {"main": res}).items():
+        sm = r["summary"]
+        line = f"  {proto:16s} Transfer={sm['Transfer']:6.2f}  Avg={sm['Avg']:6.2f}  Last={sm['Last']:6.2f}"
+        if PRESET == "full": line += "   | paper %.2f / %.2f / %.2f" % PAPER_SUMMARY
+        print(line)
+    acc = res.get("protocols", {}).get("oracle_zeroshot", {}).get("acc_matrix")
+    if acc:   # Bảng 8: cột task đã học phải giữ nguyên ở các hàng sau
+        stable = all(acc[i][j] == acc[j][j] for i in range(len(acc)) for j in range(i + 1))
+        print("  Bảng 8 (cột đã học bất biến):", "OK" if stable else "KHÔNG")
+        print(f"  {'dataset':14s}{'ngay sau học':>14s}{'paper':>8s}")
+        for j, n in enumerate(order):
+            print(f"  {n:14s}{acc[j][j]:14.2f}{PAPER_LAST[n]:8.2f}")
+    if res.get("router"):
+        print("  router (hàng cuối):", {n: v["to"] for n, v in res["router"][-1].items()})
+if PRESET == "quick":
+    print("\n(quick: 4 dataset, 1000 iter thay vì 11 dataset, 3000 iter: Transfer/Avg/Last không so trực tiếp "
+          "với paper; cột 'ngay sau học' so được nhưng sẽ thấp hơn vì train ngắn hơn)")
+""")
+
+code(r"""
+# ===================== 11. Đóng gói kết quả thành 1 file zip để gửi =====================
+# Gồm: log.jsonl, results.json, config.yaml, stdout.log của mọi run (cả zero-shot, chẩn đoán),
+# đồ thị ô 9, nguồn dữ liệu, thông tin môi trường. KHÔNG gồm checkpoint (state.pt) trừ khi bật dưới đây.
+import os, sys, json, time, zipfile, platform, subprocess
+INCLUDE_CHECKPOINTS = False
+WORK = globals().get("WORK", "/kaggle/working")
+OUT, DATA_ROOT = globals().get("OUT", f"{WORK}/outputs"), globals().get("DATA_ROOT", f"{WORK}/data")
+MAX_MB = 50   # bỏ qua file lẻ lớn hơn mức này (trừ checkpoint khi đã bật)
+
+if "fig" in globals():   # đồ thị từ ô 9
+    fig.savefig(f"{OUT}/curves.png", dpi=110, bbox_inches="tight")
+
+def versions():
+    out = {"python": platform.python_version()}
+    for mod in ("torch", "torchvision", "open_clip", "numpy"):
+        try: out[mod] = __import__(mod).__version__
+        except Exception as e: out[mod] = f"n/a ({e})"
+    try:
+        import torch
+        out["cuda"] = torch.version.cuda
+        out["gpus"] = [torch.cuda.get_device_name(i) for i in range(torch.cuda.device_count())]
+    except Exception: pass
+    return out
+
+procs = globals().get("PROCS", {})
+info = {
+    "created": time.strftime("%Y-%m-%d %H:%M:%S"),
+    "preset": globals().get("PRESET"), "order": globals().get("ORDER"),
+    "gpus_per_run": globals().get("GPUS_PER_RUN"), "experiments": globals().get("EXPERIMENTS"),
+    "common_overrides": globals().get("COMMON"), "num_workers": globals().get("NUM_WORKERS"),
+    "exit_codes": {n: p.returncode for n, p in procs.items()},
+    "versions": versions(), "cpu_count": os.cpu_count(),
+}
+try:
+    info["nvidia_smi"] = subprocess.run(["nvidia-smi"], capture_output=True, text=True).stdout
+except Exception: pass
+
+bundle = f"{WORK}/pact_results_{info['preset'] or 'run'}_{time.strftime('%Y%m%d_%H%M')}.zip"
+skipped = []
+with zipfile.ZipFile(bundle, "w", zipfile.ZIP_DEFLATED) as z:
+    for folder, dirs, files in os.walk(OUT):
+        for f in sorted(files):
+            full = os.path.join(folder, f)
+            is_ckpt = f.endswith(".pt")
+            if (is_ckpt and not INCLUDE_CHECKPOINTS) or \
+               (not is_ckpt and os.path.getsize(full) > MAX_MB * 2**20):
+                skipped.append(os.path.relpath(full, OUT)); continue
+            z.write(full, os.path.join("outputs", os.path.relpath(full, OUT)))
+    if os.path.exists(f"{DATA_ROOT}/_sources.json"):
+        z.write(f"{DATA_ROOT}/_sources.json", "data_sources.json")
+    z.writestr("run_info.json", json.dumps(info, indent=2, ensure_ascii=False, default=str))
+
+with zipfile.ZipFile(bundle) as z: names = z.namelist()
+print(f"{bundle}: {os.path.getsize(bundle) / 2**20:.1f} MB, {len(names)} file")
+print("bỏ qua:", skipped or "không có")
+print("Tải về: thanh bên phải -> Output -> /kaggle/working -> file .zip, hoặc bấm link dưới.")
+from IPython.display import FileLink, display
+cwd = os.getcwd(); os.chdir(WORK); display(FileLink(os.path.basename(bundle))); os.chdir(cwd)
+""")
+
+md(r"""
+## Chạy tiếp khi phiên Kaggle hết giờ
+
+1. Version vừa chạy có `outputs/<tên cấu hình>/state.pt` (lưu sau mỗi task).
+2. Tạo version mới, *Add Input* → chọn **output của notebook này** (version trước).
+3. Đặt `RESUME_FROM = "/kaggle/input/<tên notebook>/outputs"` ở ô cấu hình, giữ nguyên `PRESET` và `EXPERIMENTS`, rồi *Save & Run All*.
+
+## Chọn số GPU cho mỗi cấu hình
+
+`train.batch_size` (mặc định 64) là batch **toàn cục**, chia đều cho các GPU. ViT không có BatchNorm nên chạy 2 hay 4 GPU vẫn tối ưu cùng một hàm mục tiêu như 1 GPU, chỉ khác thứ tự lấy mẫu ngẫu nhiên. Nếu CPU nạp ảnh không kịp (`GPU-Util` trong `nvidia-smi` thấp), thêm GPU cho một cấu hình sẽ không nhanh hơn; khi đó nên chạy nhiều cấu hình song song.
+""")
+
+nb = {"cells": cells,
+      "metadata": {"kernelspec": {"display_name": "Python 3", "language": "python", "name": "python3"},
+                   "language_info": {"name": "python"}},
+      "nbformat": 4, "nbformat_minor": 5}
+os.makedirs(os.path.dirname(sys.argv[1]), exist_ok=True)
+with open(sys.argv[1], "w", encoding="utf-8") as f:
+    json.dump(nb, f, ensure_ascii=False, indent=1)
+print("cells:", len(cells))

@@ -1,0 +1,7 @@
+# MTIL Order-II (paper không báo cáo)
+setting: mtil
+output_dir: outputs/mtil_order2
+mtil:
+  order: II
+train:
+  iterations: 3000

@@ -1,0 +1,9 @@
+# CIL TinyImageNet: 100 lớp đầu, sau đó 5 bước (20 lớp/bước)
+setting: cil
+output_dir: outputs/cil_tinyimagenet_5steps
+cil:
+  dataset: TinyImageNet
+  initial_classes: 100
+  increment: 20
+train:
+  iterations: 1000

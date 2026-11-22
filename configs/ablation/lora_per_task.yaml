@@ -1,0 +1,7 @@
+# Bảng 5: "+ LoRA for Each Task" (baseline). Paper báo cáo 59.23 / 59.82 / 79.54
+setting: mtil
+output_dir: outputs/ablation_lora_per_task
+mtil: {order: I}
+adapter: {type: lora, use_gate: false, lora_rank: 16}
+pact: {use_marg: false, use_pa: false}
+train: {lr: 1.0e-4}

@@ -1,0 +1,8 @@
+# Few-shot MTIL, 5-shot, Order-I
+setting: mtil
+output_dir: outputs/mtil_5shot
+mtil:
+  order: I
+  shots: 5
+train:
+  iterations: 500   # GIẢ ĐỊNH: paper không nêu số iteration cho few-shot

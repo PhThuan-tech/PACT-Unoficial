@@ -1,0 +1,8 @@
+# Few-shot MTIL, 16-shot, Order-I
+setting: mtil
+output_dir: outputs/mtil_16shot
+mtil:
+  order: I
+  shots: 16
+train:
+  iterations: 500   # GIẢ ĐỊNH

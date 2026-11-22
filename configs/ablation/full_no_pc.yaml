@@ -1,0 +1,5 @@
+# PACT đầy đủ nhưng áp ràng buộc ngay từ đầu (bỏ "PC" post-convergence)
+setting: mtil
+output_dir: outputs/ablation_no_pc
+mtil: {order: I}
+pact: {post_convergence: false}

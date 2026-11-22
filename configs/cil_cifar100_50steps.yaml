@@ -1,0 +1,9 @@
+# CIL CIFAR-100, 50 bước (2 lớp/bước)
+setting: cil
+output_dir: outputs/cil_cifar100_50steps
+cil:
+  dataset: CIFAR100
+  initial_classes: 2
+  increment: 2
+train:
+  iterations: 1000

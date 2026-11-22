@@ -1,0 +1,7 @@
+# Bảng 5: "+ SAI (4)": thêm gate (paper: 67.50 / 75.94 / 85.60)
+# Gate học được (sigmoid), adapter khởi tạo ngẫu nhiên, không L_marg / L_pa.
+setting: mtil
+output_dir: outputs/ablation_sai124
+mtil: {order: I}
+adapter: {clone_mlp: false, use_gate: true, gate_mode: learned, gate_init: -4.0}
+pact: {use_marg: false, use_pa: false}

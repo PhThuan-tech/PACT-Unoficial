@@ -1,0 +1,7 @@
+# MTIL Order-I (bảng chính của paper)
+setting: mtil
+output_dir: outputs/mtil_order1
+mtil:
+  order: I
+train:
+  iterations: 3000
