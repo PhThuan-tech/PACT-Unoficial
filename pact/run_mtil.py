@@ -159,6 +159,10 @@ def main():
         if dist.is_main():
             torch.save({"adapters": model.adapter_state(), "acc": acc, "zero_shot": zero_shot,
                         "order": names, "evaluator": evaluator.state_dict()}, state_path)
+            # small copy for analysis/router_offline.py (state.pt also holds the adapters)
+            torch.save({"order": names, "acc": acc, "zero_shot": zero_shot,
+                        "learned_heads": model.use_heads, "evaluator": evaluator.state_dict()},
+                       os.path.join(out, "evaluator.pt"))
 
     if dist.is_main():
         results = {"order": names, "main_protocol": protocols[0], "zero_shot": zero_shot,

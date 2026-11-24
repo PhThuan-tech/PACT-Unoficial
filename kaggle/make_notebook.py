@@ -352,7 +352,8 @@ if PRESET == "quick":
 code(r"""
 # ===================== 11. Đóng gói kết quả thành 1 file zip để gửi =====================
 # Gồm: log.jsonl, results.json, config.yaml, stdout.log của mọi run (cả zero-shot, chẩn đoán),
-# đồ thị ô 9, nguồn dữ liệu, thông tin môi trường. KHÔNG gồm checkpoint (state.pt) trừ khi bật dưới đây.
+# đồ thị ô 9, nguồn dữ liệu, thông tin môi trường, evaluator.pt (vài MB, cho analysis/router_offline.py).
+# KHÔNG gồm checkpoint (state.pt) trừ khi bật dưới đây.
 import os, sys, json, time, zipfile, platform, subprocess
 INCLUDE_CHECKPOINTS = False
 WORK = globals().get("WORK", "/kaggle/working")
@@ -393,7 +394,7 @@ with zipfile.ZipFile(bundle, "w", zipfile.ZIP_DEFLATED) as z:
     for folder, dirs, files in os.walk(OUT):
         for f in sorted(files):
             full = os.path.join(folder, f)
-            is_ckpt = f.endswith(".pt")
+            is_ckpt = f.endswith(".pt") and f != "evaluator.pt"   # evaluator.pt: nhỏ, cho phân tích router
             if (is_ckpt and not INCLUDE_CHECKPOINTS) or \
                (not is_ckpt and os.path.getsize(full) > MAX_MB * 2**20):
                 skipped.append(os.path.relpath(full, OUT)); continue
