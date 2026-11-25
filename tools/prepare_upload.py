@@ -140,7 +140,9 @@ def main():
     if os.path.exists(stale):
         os.remove(stale)
 
-    missing = [p for p in ("wheels", "clip/ViT-B-16-quickgelu-openai.pt", "clip/reference.pt")
+    clip_files = ("clip/ViT-B-16-quickgelu-openai.pt", "clip/reference.pt")
+    has_clip = all(os.path.exists(os.path.join(kit, p)) for p in clip_files)
+    missing = [p for p in ("wheels",) + (() if args.skip_clip else clip_files)
                if not os.path.exists(os.path.join(kit, p))]
     if missing:
         sys.exit(f"missing in {kit}: {missing} (run without --skip-clip / --skip-wheels)")
@@ -153,10 +155,14 @@ def main():
           f"{sum(n.startswith('wheels/') for n in names)} wheels")
     clip_zip = os.path.join(args.dist, "pact-clip.zip")
     clip_src = os.path.join(kit, "clip", "ViT-B-16-quickgelu-openai.pt")
-    if not os.path.exists(clip_zip) or os.path.getmtime(clip_zip) < os.path.getmtime(clip_src):
-        make_kit_zip(kit, clip_zip, parts=("clip",))
-    print(f"[ok] {clip_zip}: {os.path.getsize(clip_zip) / 2**20:.0f} MB (upload once; an existing "
-          f"pact-kit dataset already holds the same weights)")
+    if not has_clip:
+        print("[skip] pact-clip.zip: no CLIP weights in dist/pact-kit/clip/ (use an existing "
+              "pact-clip / pact-kit dataset on Kaggle)")
+    else:
+        if not os.path.exists(clip_zip) or os.path.getmtime(clip_zip) < os.path.getmtime(clip_src):
+            make_kit_zip(kit, clip_zip, parts=("clip",))
+        print(f"[ok] {clip_zip}: {os.path.getsize(clip_zip) / 2**20:.0f} MB (upload once; an "
+              f"existing pact-kit dataset already holds the same weights)")
     print(f"[ok] {os.path.join(args.dist, 'pact_demo.ipynb')}")
     print("\nNext: upload pact-code.zip (new version each time the code changes), import "
           "pact_demo.ipynb (see UPLOAD.md inside the zip).")
