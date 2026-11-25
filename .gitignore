@@ -38,3 +38,6 @@ htmlcov/
 *.log
 .DS_Store
 Thumbs.db
+
+# Local pilot tables (make_tables.py output)
+/reports/tables_pilot/
