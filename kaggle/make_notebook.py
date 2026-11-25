@@ -61,7 +61,7 @@ Code: `lnhquckhnh/pact-code`, CLIP: `lnhquckhnh/pact-clip`
 
 code(r"""
 # ===================== CẤU HÌNH =====================
-PRESET = "mid"          # "quick": 4 dataset, 1000 iter | "mid": 8 dataset, 2000 iter | "full": thiết lập paper (11 dataset, 3000 iter)
+PRESET = "mid"          # "dry": 11 dataset, 20 iter (dry-run) | "quick": 4 dataset, 1000 iter | "mid": 8 dataset, 2000 iter | "full": thiết lập paper (11 dataset, 3000 iter)
 GPUS_PER_RUN = 1        # số GPU cho MỖI cấu hình (1, 2 hoặc 4); GPUS_PER_RUN x số cấu hình <= số GPU
 ALL_EXPERIMENTS = [     # (tên, file config, override thêm). Mỗi run độc lập, 1 GPU, không phụ thuộc run khác
     ("pact_s42",   "configs/mtil_order1.yaml",                 ["seed=42"]),     # PACT đầy đủ
@@ -90,6 +90,12 @@ PRESETS = {
     "full":  dict(order=["Aircraft", "Caltech101", "CIFAR100", "DTD", "EuroSAT", "Flowers", "Food",
                          "MNIST", "OxfordPet", "StanfordCars", "SUN397"],
                   extra=[]),
+    # dry: dry-run trước full. Cùng 11 dataset và cùng đường đi code, nhưng 20 iter/task và 200 ảnh test, vài phút.
+    # Kiểm tra: đọc đủ 11 dataset, ghi checkpoint / results.json, --resume (chạy hai lần, lần hai phải báo "resumed after 11 tasks").
+    # Kết quả KHÔNG có giá trị khoa học; đặt RUN_ZERO_SHOT_CHECK = False khi dry-run (đã có kết quả zero-shot).
+    "dry":   dict(order=["Aircraft", "Caltech101", "CIFAR100", "DTD", "EuroSAT", "Flowers", "Food",
+                         "MNIST", "OxfordPet", "StanfordCars", "SUN397"],
+                  extra=["train.iterations=20", "eval.max_samples=200", "train.log_every=5"]),
 }
 ORDER = PRESETS[PRESET]["order"]
 print("preset:", PRESET, "| datasets:", ORDER)
@@ -341,7 +347,7 @@ if EXTRACT_ROUTER_FEATURES:
     feat_dir = os.path.join(OUT, "router_features"); os.makedirs(feat_dir, exist_ok=True)
     feat_path = os.path.join(feat_dir, "router_features.npz")
     cmd = [sys.executable, "analysis/router_persample.py", "extract", "--config", "configs/mtil_order1.yaml",
-           "--out", feat_path, "--set", *COMMON]
+           "--out", feat_path, "--set", *COMMON, "eval.max_samples=2000"]   # tối đa 2000 ảnh test/dataset: full 11 dataset sẽ vượt MAX_MB của zip
     r = subprocess.run(cmd, cwd=REPO, capture_output=True, text=True, env={**os.environ, "CUDA_VISIBLE_DEVICES": "0"})
     print(r.stdout[-2500:], r.stderr[-2500:])
     if r.returncode == 0:
@@ -396,7 +402,7 @@ for name, _, _ in EXPERIMENTS:
             print(f"  {n:14s}{acc[j][j]:14.2f}{PAPER_LAST[n]:8.2f}")
     if res.get("router"):
         print("  router (hàng cuối):", {n: v["to"] for n, v in res["router"][-1].items()})
-if PRESET in ("quick", "mid"):
+if PRESET in ("quick", "mid", "dry"):
     print(f"\n({PRESET}: {len(ORDER)} dataset, {PRESETS[PRESET]['extra'][0].split('=')[1]} iter thay vì 11 dataset, 3000 iter: Transfer/Avg/Last không so trực tiếp "
           "với paper; cột 'ngay sau học' so được nhưng sẽ thấp hơn vì train ngắn hơn)")
 """)
