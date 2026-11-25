@@ -36,3 +36,30 @@ Kết quả ghi vào `router_offline.json` và `router_offline.png`, đặt cạ
 Test: `python tests/router_offline_test.py`.
 
 Lưu ý: chỉ các run được chạy bằng code của nhánh này mới có `evaluator.pt`. Run chạy bằng code `main` hiện tại thì phải dùng `state.pt` (đặt `INCLUDE_CHECKPOINTS = True` ở ô cuối notebook).
+
+## Hướng 4: router theo từng ảnh (`router_persample.py`)
+
+Câu hỏi: router theo batch (đúng 100% với dữ liệu đã học) tốt đến đâu khi bỏ giả định "mỗi batch một dataset"?
+
+```bash
+# GPU, một lần (notebook ô 8b tự chạy sau khi các run xong): đặc trưng CLIP đóng băng -> .npz
+python analysis/router_persample.py extract --config configs/mtil_order1.yaml --out router_features.npz --set <như run>
+# CPU, vài giây
+python analysis/router_persample.py analyze router_features.npz --alpha 0.05
+```
+
+So 5 cách tính điểm (proto, knn, maha, maxcos, mcm), chế độ `sample` và `batch`: tỷ lệ gửi đúng, gửi nhầm unseen, AUROC, FPR95, từng dataset. Test: `python tests/router_persample_test.py`.
+
+## Hướng 5: oracle best snapshot (`oracle_snapshot.py`)
+
+Câu hỏi: có snapshot nào giúp dataset chưa học tốt hơn CLIP đóng băng không? Nếu không, không router nào nâng được Transfer vượt zero-shot.
+
+```bash
+python analysis/oracle_snapshot.py --run-dir outputs/pact_s42 --max-samples 2000 --set data_root=... model.pretrained=...
+```
+
+Cần `state.pt` và `config.yaml` của run (GPU). In bảng zero-shot / latest / oracle_best theo từng dataset. Test lõi: `python tests/oracle_snapshot_test.py`.
+
+## So sánh PACT và isolation (`tools/compare_runs.py`)
+
+Đọc `experiments/runs/*.json` (do `tools/log_run.py` ghi), ghép cặp PACT / isolation cùng preset và seed, tính chênh Last của `oracle_zeroshot`, Transfer so với zero-shot, rồi áp quy tắc quyết định (dưới +0.5 và cùng dấu: ràng buộc không đóng góp; trên +1.0 và cùng dấu: có giá trị; còn lại: chưa kết luận). Cảnh báo nếu hai run dùng bản code khác nhau. Test: `python tests/compare_runs_test.py`.

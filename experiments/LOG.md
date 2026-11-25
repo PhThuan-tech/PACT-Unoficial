@@ -214,5 +214,7 @@ Cột đã học bất biến theo Bảng 8 (protocol chính): isolation: có; p
 
 Router offline (`analysis/router_offline.py`, cả hai run giống nhau): dữ liệu đã học gửi đúng 100% ở delta từ -0.10 đến +0.05, sụp còn 15% ở +0.10. Unseen gửi nhầm sang snapshot: 16.7% ở delta 0, 0% ở +0.05.
 
+Quét mịn delta (bước 0.01 từ 0.02 đến 0.10, ngày 2026-11-26): cả hai phía cùng đúng trong khoảng **delta 0.03 đến 0.06** (dữ liệu đã học 100% đúng, unseen 0% gửi nhầm, Transfer 62.67 = zero-shot). Ở delta 0.07 dữ liệu đã học còn 71.2% đúng (Last PACT 65.23, isolation 67.00); 0.08: 60.0%; 0.09: 46.2%; 0.10: 15.0%. Delta 0.02 còn 4.2% unseen bị gửi nhầm. Tức khoảng ngưỡng tốt rộng khoảng 0.04 đơn vị cosine, cách ngưỡng mặc định (delta 0) khoảng 0.03; 4 dataset rất khác nhau, router theo batch. Ghi chú: ở delta 0.03 đến 0.06 Transfer bằng đúng zero-shot, nghĩa là router "hoàn hảo" ở đây chỉ trả unseen về CLIP chứ không tạo ra lợi ích Transfer.
+
 **Kết luận:** Chưa kết luận được, chỉ là tín hiệu sơ bộ (1 seed, 4 task, `eval.max_samples=1000`). Isolation có Last cao hơn PACT 2.3 điểm (79.5 so với 77.2), cao hơn ở cả ba task so sánh được, nên ràng buộc PACT chưa cho thấy đóng góp vào Last. Transfer: `oracle_latest` 62.42 (PACT) và 61.19 (isolation), đều thấp hơn zero-shot 62.67. Router theo batch đúng 100% là kết quả dễ (4 dataset rất khác nhau, đo theo batch), không phải bằng chứng router tốt. Việc tiếp theo: chạy `mid` hai seed để xác nhận.
 
