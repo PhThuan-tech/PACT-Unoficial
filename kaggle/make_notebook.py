@@ -61,19 +61,19 @@ Code: `lnhquckhnh/pact-code`, CLIP: `lnhquckhnh/pact-clip`
 
 code(r"""
 # ===================== CẤU HÌNH =====================
-PRESET = "mid"          # "dry": 11 dataset, 20 iter (dry-run) | "quick": 4 dataset, 1000 iter | "mid": 8 dataset, 2000 iter | "full": thiết lập paper (11 dataset, 3000 iter)
-GPUS_PER_RUN = 1        # số GPU cho MỖI cấu hình (1, 2 hoặc 4); GPUS_PER_RUN x số cấu hình <= số GPU
-ALL_EXPERIMENTS = [     # (tên, file config, override thêm). Mỗi run độc lập, 1 GPU, không phụ thuộc run khác
+PRESET = "full"          # "dry": 11 dataset, 20 iter (dry-run) | "quick": 4 dataset, 1000 iter | "mid": 8 dataset, 2000 iter | "full": thiết lập paper (11 dataset, 3000 iter)
+GPUS_PER_RUN = 2        # số GPU cho MỖI cấu hình (1, 2 hoặc 4); GPUS_PER_RUN x số cấu hình <= số GPU. Cả nhóm dùng cùng một giá trị
+ALL_EXPERIMENTS = [     # (tên, file config, override thêm). Mỗi run độc lập (chạy ở phiên Kaggle riêng hoặc song song), dùng GPUS_PER_RUN GPU
     ("pact_s42",   "configs/mtil_order1.yaml",                 ["seed=42"]),     # PACT đầy đủ
     ("iso_s42",    "configs/analysis/isolation_baseline.yaml", ["seed=42"]),     # bỏ L_marg và L_pa, vẫn đánh giá theo snapshot
     ("pact_s2026", "configs/mtil_order1.yaml",                 ["seed=2026"]),
     ("iso_s2026",  "configs/analysis/isolation_baseline.yaml", ["seed=2026"]),
 ]
-RUN_ONLY = None         # chạy một phần, ví dụ ["pact_s2026", "iso_s2026"] cho phiên thứ hai; None = chạy hết
+RUN_ONLY = ["pact_s42"]  # MỖI NGƯỜI ĐỔI DÒNG NÀY: pact_s42 (Phát), iso_s42, pact_s2026, iso_s2026; None = chạy hết (cần đủ GPU)
 EXPERIMENTS = [e for e in ALL_EXPERIMENTS if RUN_ONLY is None or e[0] in RUN_ONLY]
 assert EXPERIMENTS, f"RUN_ONLY={RUN_ONLY} không khớp tên run nào"
 RESUME_FROM = None      # chạy tiếp: thư mục outputs/ của version trước (đã gắn làm input)
-RUN_ZERO_SHOT_CHECK = True
+RUN_ZERO_SHOT_CHECK = False   # zero-shot 11 dataset đã kiểm tra (Khánh, 25/11); đặt True nếu đổi dữ liệu hoặc CLIP
 
 WORK = "/kaggle/working"
 REPO = f"{WORK}/PACT"
