@@ -28,7 +28,7 @@ Notebook này chạy lại repo PACT (CVPR 2026, bản tự cài đặt) trên K
 | `pact-kit` hoặc `pact-clip` | trọng số CLIP (upload một lần). Dataset `pact-kit` cũ dùng được; code cũ bên trong sẽ bị bỏ qua vì notebook chọn bản code mới nhất |
 | Dataset ảnh | Một bản Kaggle cho mỗi dataset cần dùng (gợi ý ở bảng dưới). Script tự dò file đặc trưng, nên **không cần đúng cấu trúc thư mục** |
 
-Preset `quick` chỉ cần **Aircraft, DTD, EuroSAT, OxfordPet**. Preset `full` cần đủ 11 dataset MTIL.
+Preset `quick` chỉ cần **Aircraft, DTD, EuroSAT, OxfordPet**. Preset `mid` cần thêm **Caltech101, Flowers, MNIST** (7 dataset, 2000 iter). Preset `full` cần đủ 11 dataset MTIL.
 
 **Cấu hình mặc định bám theo supplementary của paper** (xem `reports/Giải mã chi tiết PACT.md`):
 - Đánh giá theo snapshot của từng task (Bảng 8: độ chính xác task đã học không đổi).
@@ -59,13 +59,11 @@ Mỗi run tính cùng lúc 4 giao thức đánh giá: `router`, `oracle_latest`,
 
 code(r"""
 # ===================== CẤU HÌNH =====================
-PRESET = "quick"        # "quick": 4 dataset, 1000 iter | "full": thiết lập paper (11 dataset, 3000 iter)
-GPUS_PER_RUN = 1        # số GPU cho MỖI cấu hình (1, 2 hoặc 4); GPUS_PER_RUN x số cấu hình <= số GPU
+PRESET = "mid"          # "quick": 4 dataset, 1000 iter | "mid": 7 dataset nhỏ, 2000 iter | "full": thiết lập paper (11 dataset, 3000 iter)
+GPUS_PER_RUN = 2        # số GPU cho MỖI cấu hình (1, 2 hoặc 4); GPUS_PER_RUN x số cấu hình <= số GPU
 EXPERIMENTS = [         # (tên, file config, override thêm)
-    ("pact_paper",        "configs/mtil_order1.yaml",           []),                  # cách đọc supplement
-    ("pact_lr5e-5",       "configs/mtil_order1.yaml",           ["train.lr=5e-5"]),   # lr chưa biết: quét
-    ("pact_learned_gate", "configs/ablation/learned_gate.yaml", []),                  # gate học được (bản cũ)
-    ("pact_text_head",    "configs/mtil_order1.yaml",           ["head.type=text"]),  # không có head học được
+    ("pact_paper", "configs/mtil_order1.yaml",                 []),   # PACT đầy đủ
+    ("isolation",  "configs/analysis/isolation_baseline.yaml", []),   # bỏ L_marg và L_pa, vẫn đánh giá theo snapshot
 ]
 RESUME_FROM = None      # chạy tiếp: thư mục outputs/ của version trước (đã gắn làm input)
 RUN_ZERO_SHOT_CHECK = True
@@ -78,6 +76,10 @@ OUT = f"{WORK}/outputs"
 PRESETS = {
     "quick": dict(order=["Aircraft", "DTD", "EuroSAT", "OxfordPet"],
                   extra=["train.iterations=1000", "eval.max_samples=1000", "train.log_every=25"]),
+    # mid: 7 dataset nhỏ, bỏ CIFAR100/Food/StanfordCars/SUN397 (lớn hoặc cần tải tay). Giữ thứ tự tương đối của Order-I.
+    # 7 task x 2000 iter = 14k iter, khoảng 42% chi phí của full (33k iter), khoảng 2.5-3 giờ GPU mỗi run.
+    "mid":   dict(order=["Aircraft", "Caltech101", "DTD", "EuroSAT", "Flowers", "MNIST", "OxfordPet"],
+                  extra=["train.iterations=2000", "eval.max_samples=2000", "train.log_every=50"]),
     "full":  dict(order=["Aircraft", "Caltech101", "CIFAR100", "DTD", "EuroSAT", "Flowers", "Food",
                          "MNIST", "OxfordPet", "StanfordCars", "SUN397"],
                   extra=[]),
@@ -283,15 +285,36 @@ def last_record(name):
 def tail(name, n=40):
     with open(os.path.join(OUT, name, "stdout.log")) as f: return "".join(f.readlines()[-n:])
 
+ITERS = next((int(o.split("=")[1]) for o in PRESETS[PRESET]["extra"] if o.startswith("train.iterations=")), 3000)
+
+def progress(name):
+    # tiến độ huấn luyện 0..1 theo (task đã xong x iter + iter hiện tại); eval không được tính
+    path = os.path.join(OUT, name, "log.jsonl")
+    if not os.path.exists(path): return 0.0
+    with open(path) as f: lines = f.readlines()
+    for line in reversed(lines):
+        rec = json.loads(line)
+        if "it" in rec and rec.get("task") in ORDER:
+            return (ORDER.index(rec["task"]) * ITERS + rec["it"] + 1) / (len(ORDER) * ITERS)
+        if "after_task" in rec and rec["after_task"] == ORDER[-1]:
+            return 1.0
+    return 0.0
+
 INTERVAL = 120   # giây
 KEYS = ("task", "it", "L_cond", "phi", "alpha_tilde", "after_task", "mean")
+T0, P0 = time.time(), {n: progress(n) for n in PROCS}   # mốc đầu (nếu resume thì không tính phần đã xong)
 while True:
     print(time.strftime("%H:%M:%S"), "-" * 60)
     for name, p in PROCS.items():
         rec = last_record(name)
         brief = {k: (round(v, 4) if isinstance(v, float) else v) for k, v in rec.items() if k in KEYS}
         state = "đang chạy" if p.poll() is None else f"xong (exit {p.returncode})"
-        print(f"  [{name}] {state} {brief}")
+        prog = progress(name)
+        eta = ""
+        if p.poll() is None and prog > P0[name]:
+            remain = (1 - prog) * (time.time() - T0) / (prog - P0[name])
+            eta = f" | ETA ~{remain / 60:.0f} phút (chưa tính eval)"
+        print(f"  [{name}] {state} {prog:.0%}{eta} {brief}")
     if all(p.poll() is not None for p in PROCS.values()): break
     time.sleep(INTERVAL)
 for name, p in PROCS.items():
@@ -344,8 +367,8 @@ for name, _, _ in EXPERIMENTS:
             print(f"  {n:14s}{acc[j][j]:14.2f}{PAPER_LAST[n]:8.2f}")
     if res.get("router"):
         print("  router (hàng cuối):", {n: v["to"] for n, v in res["router"][-1].items()})
-if PRESET == "quick":
-    print("\n(quick: 4 dataset, 1000 iter thay vì 11 dataset, 3000 iter: Transfer/Avg/Last không so trực tiếp "
+if PRESET in ("quick", "mid"):
+    print(f"\n({PRESET}: {len(ORDER)} dataset, {PRESETS[PRESET]['extra'][0].split('=')[1]} iter thay vì 11 dataset, 3000 iter: Transfer/Avg/Last không so trực tiếp "
           "với paper; cột 'ngay sau học' so được nhưng sẽ thấp hơn vì train ngắn hơn)")
 """)
 
