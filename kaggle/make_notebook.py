@@ -39,20 +39,22 @@ Preset `quick` chỉ cần **Aircraft, DTD, EuroSAT, OxfordPet**. Preset `mid` c
 
 Mỗi run tính cùng lúc 4 giao thức đánh giá: `router`, `oracle_latest`, `oracle_zeroshot` và `latest` (cách cũ).
 
-| Dataset | Gợi ý trên Kaggle (chưa kiểm hết cấu trúc; ô 4 sẽ báo nếu thiếu file) |
+| Dataset | Dataset trên Kaggle (đã kiểm 25/11, copy tên rồi Add Input) |
 |---|---|
-| Aircraft | `howardkhh/fgvc-aircraft`, `seryouxblaster764/fgvc-aircraft` |
+| Aircraft | `howardkhh/fgvc-aircraft` |
 | Caltech101 | `imbikramsaha/caltech-101` |
-| CIFAR100 | `fedesoriano/cifar100` (bản pickle `train/test/meta`) |
+| CIFAR100 | `fedesoriano/cifar100` |
 | DTD | `jmexpert/describable-textures-dataset-dtd` |
-| EuroSAT | bản **RGB .jpg**, ví dụ `apollo2506/eurosat-dataset`, `waseemalastal/eurosat-rgb-dataset` |
-| Flowers | cần `jpg/` + `imagelabels.mat` + `setid.mat` (bản gốc Oxford) |
+| EuroSAT | `apollo2506/eurosat-dataset` |
+| Flowers | `muhammadtalib/flowers-102` |
 | Food | `dansbecker/food-101` |
-| MNIST | `hojjatk/mnist-dataset` hoặc bản có 4 file idx gốc (không phải Fashion-MNIST) |
+| MNIST | `hojjatk/mnist-dataset` |
 | OxfordPet | `julinmaloof/the-oxfordiiit-pet-dataset` |
-| StanfordCars | `rickyyyyyyy/torchvision-stanford-cars` (đã đúng cấu trúc torchvision) |
-| SUN397 | cần bản gốc (`ClassName.txt` cạnh `a/ b/ ...`); chưa thấy bản đầy đủ trên Kaggle, có thể phải tự upload |
-| TinyImageNet (CIL) | `akash2sharma/tiny-imagenet` |
+| StanfordCars | `rickyyyyyyy/torchvision-stanford-cars` |
+| SUN397 | `hiuphmnhtrung/sun397` |
+| TinyImageNet (CIL) | `akash2sharma/tiny-imagenet` (chưa kiểm) |
+
+Code: `lnhquckhnh/pact-code`, CLIP: `lnhquckhnh/pact-clip`
 
 **Chạy dài (full):** dùng *Save Version → Save & Run All*. Phiên Kaggle có giới hạn thời gian; checkpoint được lưu sau mỗi task (xem ô cuối để chạy tiếp).
 """)

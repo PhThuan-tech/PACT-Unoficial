@@ -39,6 +39,8 @@ htmlcov/
 .DS_Store
 Thumbs.db
 
+# Local pilot tables (make_tables.py output)
+/reports/tables_pilot/
 # reports and research_note agents
 reports/
 research_notes/
