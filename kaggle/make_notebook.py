@@ -28,7 +28,7 @@ Notebook này chạy lại repo PACT (CVPR 2026, bản tự cài đặt) trên K
 | `pact-kit` hoặc `pact-clip` | trọng số CLIP (upload một lần). Dataset `pact-kit` cũ dùng được; code cũ bên trong sẽ bị bỏ qua vì notebook chọn bản code mới nhất |
 | Dataset ảnh | Một bản Kaggle cho mỗi dataset cần dùng (gợi ý ở bảng dưới). Script tự dò file đặc trưng, nên **không cần đúng cấu trúc thư mục** |
 
-Preset `quick` chỉ cần **Aircraft, DTD, EuroSAT, OxfordPet**. Preset `mid` cần thêm **Caltech101, Flowers, MNIST** (7 dataset, 2000 iter). Preset `full` cần đủ 11 dataset MTIL.
+Preset `quick` chỉ cần **Aircraft, DTD, EuroSAT, OxfordPet**. Preset `mid` cần thêm **Caltech101, CIFAR100, MNIST, StanfordCars** (8 dataset, 2000 iter, bỏ Flowers vì chưa có bản Kaggle đúng cấu trúc). Preset `full` cần đủ 11 dataset MTIL.
 
 **Cấu hình mặc định bám theo supplementary của paper** (xem `reports/Giải mã chi tiết PACT.md`):
 - Đánh giá theo snapshot của từng task (Bảng 8: độ chính xác task đã học không đổi).
@@ -59,12 +59,17 @@ Mỗi run tính cùng lúc 4 giao thức đánh giá: `router`, `oracle_latest`,
 
 code(r"""
 # ===================== CẤU HÌNH =====================
-PRESET = "mid"          # "quick": 4 dataset, 1000 iter | "mid": 7 dataset nhỏ, 2000 iter | "full": thiết lập paper (11 dataset, 3000 iter)
-GPUS_PER_RUN = 2        # số GPU cho MỖI cấu hình (1, 2 hoặc 4); GPUS_PER_RUN x số cấu hình <= số GPU
-EXPERIMENTS = [         # (tên, file config, override thêm)
-    ("pact_paper", "configs/mtil_order1.yaml",                 []),   # PACT đầy đủ
-    ("isolation",  "configs/analysis/isolation_baseline.yaml", []),   # bỏ L_marg và L_pa, vẫn đánh giá theo snapshot
+PRESET = "mid"          # "quick": 4 dataset, 1000 iter | "mid": 8 dataset, 2000 iter | "full": thiết lập paper (11 dataset, 3000 iter)
+GPUS_PER_RUN = 1        # số GPU cho MỖI cấu hình (1, 2 hoặc 4); GPUS_PER_RUN x số cấu hình <= số GPU
+ALL_EXPERIMENTS = [     # (tên, file config, override thêm). Mỗi run độc lập, 1 GPU, không phụ thuộc run khác
+    ("pact_s42",   "configs/mtil_order1.yaml",                 ["seed=42"]),     # PACT đầy đủ
+    ("iso_s42",    "configs/analysis/isolation_baseline.yaml", ["seed=42"]),     # bỏ L_marg và L_pa, vẫn đánh giá theo snapshot
+    ("pact_s2026", "configs/mtil_order1.yaml",                 ["seed=2026"]),
+    ("iso_s2026",  "configs/analysis/isolation_baseline.yaml", ["seed=2026"]),
 ]
+RUN_ONLY = None         # chạy một phần, ví dụ ["pact_s2026", "iso_s2026"] cho phiên thứ hai; None = chạy hết
+EXPERIMENTS = [e for e in ALL_EXPERIMENTS if RUN_ONLY is None or e[0] in RUN_ONLY]
+assert EXPERIMENTS, f"RUN_ONLY={RUN_ONLY} không khớp tên run nào"
 RESUME_FROM = None      # chạy tiếp: thư mục outputs/ của version trước (đã gắn làm input)
 RUN_ZERO_SHOT_CHECK = True
 
@@ -76,9 +81,9 @@ OUT = f"{WORK}/outputs"
 PRESETS = {
     "quick": dict(order=["Aircraft", "DTD", "EuroSAT", "OxfordPet"],
                   extra=["train.iterations=1000", "eval.max_samples=1000", "train.log_every=25"]),
-    # mid: 7 dataset nhỏ, bỏ CIFAR100/Food/StanfordCars/SUN397 (lớn hoặc cần tải tay). Giữ thứ tự tương đối của Order-I.
-    # 7 task x 2000 iter = 14k iter, khoảng 42% chi phí của full (33k iter), khoảng 2.5-3 giờ GPU mỗi run.
-    "mid":   dict(order=["Aircraft", "Caltech101", "DTD", "EuroSAT", "Flowers", "MNIST", "OxfordPet"],
+    # mid: 8 dataset nhỏ/vừa có bản Kaggle dò được, bỏ Flowers (chưa có bản đúng cấu trúc), Food và SUN397 (lớn). Giữ thứ tự tương đối của Order-I.
+    # 8 task x 2000 iter = 16k iter, khoảng 48% chi phí của full (33k iter), khoảng 3 giờ GPU mỗi run (ước lượng, chưa đo).
+    "mid":   dict(order=["Aircraft", "Caltech101", "CIFAR100", "DTD", "EuroSAT", "MNIST", "OxfordPet", "StanfordCars"],
                   extra=["train.iterations=2000", "eval.max_samples=2000", "train.log_every=50"]),
     "full":  dict(order=["Aircraft", "Caltech101", "CIFAR100", "DTD", "EuroSAT", "Flowers", "Food",
                          "MNIST", "OxfordPet", "StanfordCars", "SUN397"],
@@ -118,6 +123,10 @@ def scan(roots):
             found["zips"] += [os.path.join(path, f) for f in files if f in KIT_ZIPS]
     return found
 
+def build_id(code_dir):
+    try: return json.load(open(os.path.join(code_dir, "BUILD_INFO.json"))).get("id", "?")
+    except Exception: return "?"
+
 def build_time(code_dir):   # bản code mới nhất thắng; bản cũ không có BUILD_INFO.json
     try: return json.load(open(os.path.join(code_dir, "BUILD_INFO.json")))["built"]
     except Exception: return ""
@@ -156,7 +165,7 @@ if not (wheels or wheel_dirs):
     wheels, wheel_dirs = find_wheels(ROOTS)
 wheels = list({os.path.basename(w): w for w in wheels}.values())   # mỗi file 1 lần
 
-print("code     :", code_src, "| build:", build_time(code_src) or "(bản cũ)",
+print("code     :", code_src, "| build:", build_time(code_src) or "(bản cũ)", "| id:", build_id(code_src),
       f"| {len(found['codes'])} bản tìm thấy")
 print("wheels   :", [os.path.basename(w) for w in wheels] or wheel_dirs)
 print("clip     :", clip_w, "| reference:", os.path.exists(clip_ref))
@@ -322,6 +331,24 @@ for name, p in PROCS.items():
 """)
 
 code(r"""
+# ===================== 8b. Đặc trưng CLIP đóng băng cho router theo từng ảnh (analysis/router_persample.py) =====================
+# Chạy sau khi các run xong, 1 GPU, vài phút. Ghi outputs/router_features/router_features.npz (float16, vài chục MB),
+# nằm trong zip kết quả. Phân tích (CPU, vài giây):  python analysis/router_persample.py analyze <file>.npz
+EXTRACT_ROUTER_FEATURES = True
+if EXTRACT_ROUTER_FEATURES:
+    feat_dir = os.path.join(OUT, "router_features"); os.makedirs(feat_dir, exist_ok=True)
+    feat_path = os.path.join(feat_dir, "router_features.npz")
+    cmd = [sys.executable, "analysis/router_persample.py", "extract", "--config", "configs/mtil_order1.yaml",
+           "--out", feat_path, "--set", *COMMON]
+    r = subprocess.run(cmd, cwd=REPO, capture_output=True, text=True, env={**os.environ, "CUDA_VISIBLE_DEVICES": "0"})
+    print(r.stdout[-2500:], r.stderr[-2500:])
+    if r.returncode == 0:
+        r = subprocess.run([sys.executable, "analysis/router_persample.py", "analyze", feat_path],
+                           cwd=REPO, capture_output=True, text=True)
+        print(r.stdout[-5000:], r.stderr[-1500:])
+""")
+
+code(r"""
 # ===================== 9. Đồ thị loss / alpha / gate =====================
 import matplotlib.pyplot as plt
 fig, axes = plt.subplots(len(EXPERIMENTS), 3, figsize=(16, 3.6 * len(EXPERIMENTS)), squeeze=False)
@@ -376,9 +403,10 @@ code(r"""
 # ===================== 11. Đóng gói kết quả thành 1 file zip để gửi =====================
 # Gồm: log.jsonl, results.json, config.yaml, stdout.log của mọi run (cả zero-shot, chẩn đoán),
 # đồ thị ô 9, nguồn dữ liệu, thông tin môi trường, evaluator.pt (vài MB, cho analysis/router_offline.py).
-# KHÔNG gồm checkpoint (state.pt) trừ khi bật dưới đây.
+# KHÔNG gồm checkpoint (state.pt) trừ run được liệt kê dưới đây. Checkpoint của MỌI run vẫn nằm trong
+# /kaggle/working/outputs (tab Output của notebook), dùng lại được qua RESUME_FROM mà không cần tải về.
 import os, sys, json, time, zipfile, platform, subprocess
-INCLUDE_CHECKPOINTS = False
+INCLUDE_CHECKPOINTS = ["pact_s42"]   # True: mọi run | False hoặc []: không run nào | danh sách tên run
 WORK = globals().get("WORK", "/kaggle/working")
 OUT, DATA_ROOT = globals().get("OUT", f"{WORK}/outputs"), globals().get("DATA_ROOT", f"{WORK}/data")
 MAX_MB = 50   # bỏ qua file lẻ lớn hơn mức này (trừ checkpoint khi đã bật)
@@ -405,6 +433,7 @@ info = {
     "gpus_per_run": globals().get("GPUS_PER_RUN"), "experiments": globals().get("EXPERIMENTS"),
     "common_overrides": globals().get("COMMON"), "num_workers": globals().get("NUM_WORKERS"),
     "exit_codes": {n: p.returncode for n, p in procs.items()},
+    "code_build": (lambda f: json.load(open(f)) if os.path.exists(f) else None)(f"{globals().get('REPO', '')}/BUILD_INFO.json"),
     "versions": versions(), "cpu_count": os.cpu_count(),
 }
 try:
@@ -418,7 +447,10 @@ with zipfile.ZipFile(bundle, "w", zipfile.ZIP_DEFLATED) as z:
         for f in sorted(files):
             full = os.path.join(folder, f)
             is_ckpt = f.endswith(".pt") and f != "evaluator.pt"   # evaluator.pt: nhỏ, cho phân tích router
-            if (is_ckpt and not INCLUDE_CHECKPOINTS) or \
+            run_name = os.path.relpath(full, OUT).split(os.sep)[0]
+            keep_ckpt = INCLUDE_CHECKPOINTS is True or (isinstance(INCLUDE_CHECKPOINTS, (list, tuple))
+                                                        and run_name in INCLUDE_CHECKPOINTS)
+            if (is_ckpt and not keep_ckpt) or \
                (not is_ckpt and os.path.getsize(full) > MAX_MB * 2**20):
                 skipped.append(os.path.relpath(full, OUT)); continue
             z.write(full, os.path.join("outputs", os.path.relpath(full, OUT)))

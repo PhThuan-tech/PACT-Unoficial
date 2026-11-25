@@ -210,5 +210,9 @@ Last theo từng dataset (protocol chính):
 - **isolation** (router): Aircraft 51.00, DTD 76.20, EuroSAT 97.70, OxfordPet 93.10
 - **pact_paper** (router): Aircraft 50.60, DTD 71.20, EuroSAT 95.50, OxfordPet 91.50
 
-**Kết luận:** _(điền tay)_
+Cột đã học bất biến theo Bảng 8 (protocol chính): isolation: có; pact_paper: có (kiểm tra từ `acc_matrix` đã lưu)
+
+Router offline (`analysis/router_offline.py`, cả hai run giống nhau): dữ liệu đã học gửi đúng 100% ở delta từ -0.10 đến +0.05, sụp còn 15% ở +0.10. Unseen gửi nhầm sang snapshot: 16.7% ở delta 0, 0% ở +0.05.
+
+**Kết luận:** Chưa kết luận được, chỉ là tín hiệu sơ bộ (1 seed, 4 task, `eval.max_samples=1000`). Isolation có Last cao hơn PACT 2.3 điểm (79.5 so với 77.2), cao hơn ở cả ba task so sánh được, nên ràng buộc PACT chưa cho thấy đóng góp vào Last. Transfer: `oracle_latest` 62.42 (PACT) và 61.19 (isolation), đều thấp hơn zero-shot 62.67. Router theo batch đúng 100% là kết quả dễ (4 dataset rất khác nhau, đo theo batch), không phải bằng chứng router tốt. Việc tiếp theo: chạy `mid` hai seed để xác nhận.
 

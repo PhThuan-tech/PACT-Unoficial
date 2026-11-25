@@ -84,7 +84,7 @@ def collect(path):
         runs = sorted({n.split("/")[1] for n in z.namelist() if n.startswith("outputs/") and n.count("/") >= 2})
         data = {"id": rid, "created": info.get("created"), "preset": info.get("preset"), "order": info.get("order"),
                 "gpus_per_run": info.get("gpus_per_run"), "overrides": info.get("common_overrides"),
-                "exit_codes": info.get("exit_codes"), "runs": {}}
+                "exit_codes": info.get("exit_codes"), "code_build": info.get("code_build"), "runs": {}}
         extra = {}
         for run in runs:
             res = read_json(z, f"outputs/{run}/results.json")
@@ -117,6 +117,10 @@ def render(d, note):
     lines = [marker(d["id"]), f"## {d['id']}", ""]
     meta = [f"- **Preset:** {d['preset']} ({len(d['order'] or [])} dataset: {', '.join(d['order'] or [])})",
             f"- **Tạo lúc:** {d['created']} | GPU mỗi run: {d['gpus_per_run']}"]
+    cb = d.get("code_build")
+    if cb:
+        meta.append(f"- **Code:** `{cb.get('id')}` (commit {cb.get('commit')}, nhánh {cb.get('branch')}"
+                    + (", có thay đổi chưa commit" if cb.get("dirty") else "") + ")")
     if d.get("exit_codes"):
         bad = {k: v for k, v in d["exit_codes"].items() if v}
         meta.append("- **Exit code:** " + ("tất cả 0" if not bad else f"LỖI {bad}"))
@@ -144,8 +148,20 @@ def render(d, note):
         last = ((r.get("per_dataset") or {}).get("Last")) or {}
         if last:
             lines.append(f"- **{name}** ({r.get('main_protocol')}): " + ", ".join(f"{k} {f2(v)}" for k, v in last.items()))
+    checks = [f"{name}: {invariance(r.get('acc_matrix'))}" for name, r in d["runs"].items() if r.get("acc_matrix")]
+    if checks:
+        lines += ["", "Cột đã học bất biến theo Bảng 8 (protocol chính): " + "; ".join(checks)]
     lines += ["", "**Kết luận:** _(điền tay)_", ""]
     return "\n".join(lines) + "\n"
+
+
+def invariance(acc):
+    """Điểm của task j ở mọi hàng t >= j phải bằng nhau (snapshot đóng băng)."""
+    try:
+        bad = [(t, j) for t in range(len(acc)) for j in range(t + 1) if abs(acc[t][j] - acc[j][j]) > 1e-6]
+    except (TypeError, IndexError):
+        return "không kiểm tra được"
+    return "có" if not bad else f"KHÔNG ({len(bad)} ô lệch, ví dụ hàng {bad[0][0]} cột {bad[0][1]})"
 
 
 def write_all(d, extra, note):
@@ -182,6 +198,8 @@ def main():
     ap.add_argument("--note", default="")
     ap.add_argument("--delete", action="store_true", help="xoá zip sau khi đã ghi và kiểm tra lại")
     a = ap.parse_args()
+    if hasattr(sys.stdout, "reconfigure"):  # console Windows (cp1252) không in được tiếng Việt
+        sys.stdout.reconfigure(encoding="utf-8", errors="replace")
     os.makedirs(EXP, exist_ok=True)
     rc = 0
     for path in a.zips:
