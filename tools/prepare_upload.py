@@ -21,6 +21,7 @@ installed into dist/.pylib just for the export.
 
 import argparse
 import json
+import hashlib
 import os
 import shutil
 import subprocess
@@ -29,7 +30,7 @@ import time
 import zipfile
 
 ROOT = os.path.abspath(os.path.join(os.path.dirname(os.path.abspath(__file__)), ".."))
-INCLUDE = ["pact", "configs", "tools", "tests", "kaggle", "README.md", "requirements.txt"]
+INCLUDE = ["pact", "configs", "tools", "tests", "kaggle", "analysis", "README.md", "requirements.txt"]
 OPEN_CLIP_SPEC = "open_clip_torch>=2.20,<3.0"
 STORED = (".pt", ".whl", ".zip")  # already compressed / incompressible: store, do not deflate
 
@@ -66,6 +67,33 @@ def _add(zf, path, arcname):
     zf.write(path, arcname, compress_type=method)
 
 
+def build_info():
+    """Identity of the code being shipped: id = <time>-<commit>[+dirty]-<hash of shipped files>.
+
+    The hash covers the content of every shipped file, so two zips with the same id contain the
+    same code even when the working tree has uncommitted changes (then the commit alone is not enough).
+    """
+    def git(*args):
+        try:
+            return subprocess.run(["git", *args], cwd=ROOT, capture_output=True, text=True,
+                                  check=True).stdout.strip()
+        except (OSError, subprocess.CalledProcessError):
+            return None
+
+    digest = hashlib.sha256()
+    for path, arc in sorted(repo_files(), key=lambda x: x[1]):
+        if arc.endswith(".ipynb") or arc == "PACT/kaggle/pact_demo.ipynb":
+            continue  # generated notebook (embeds timestamps), not code
+        with open(path, "rb") as f:
+            digest.update(arc.encode() + b"\x00" + f.read())
+    built = time.strftime("%Y-%m-%dT%H:%M:%S")
+    commit, dirty = git("rev-parse", "--short", "HEAD"), bool(git("status", "--porcelain"))
+    code_hash = digest.hexdigest()[:8]
+    tag = f"{built[:10].replace('-', '')}-{built[11:16].replace(':', '')}-{commit or 'nogit'}{'+dirty' if dirty else ''}-{code_hash}"
+    return {"built": built, "id": tag, "commit": commit, "branch": git("rev-parse", "--abbrev-ref", "HEAD"),
+            "dirty": dirty, "code_hash": code_hash}
+
+
 def make_kit_zip(kit_dir, dest, parts=("code", "wheels", "clip")):
     """Archive with the repository as a folder (no nested zip) and the chosen parts.
 
@@ -77,8 +105,9 @@ def make_kit_zip(kit_dir, dest, parts=("code", "wheels", "clip")):
         if "code" in parts:
             for path, arc in repo_files():
                 _add(zf, path, arc)
-            zf.writestr("PACT/BUILD_INFO.json", json.dumps(
-                {"built": time.strftime("%Y-%m-%dT%H:%M:%S")}, indent=2))
+            info = build_info()
+            zf.writestr("PACT/BUILD_INFO.json", json.dumps(info, indent=2))
+            print(f"[build] {info['id']}")
             _add(zf, os.path.join(ROOT, "kaggle", "pact_demo.ipynb"), "pact_demo.ipynb")
             zf.writestr("UPLOAD.md", GUIDE)
         for sub in ("wheels", "clip"):

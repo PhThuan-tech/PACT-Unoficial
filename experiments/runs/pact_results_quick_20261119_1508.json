@@ -1,0 +1,229 @@
+{
+ "id": "pact_results_quick_20261119_1508",
+ "created": "2026-11-19 15:08:13",
+ "preset": "quick",
+ "order": [
+  "Aircraft",
+  "DTD",
+  "EuroSAT",
+  "OxfordPet"
+ ],
+ "gpus_per_run": 2,
+ "overrides": [
+  "data_root=/kaggle/working/data",
+  "download=false",
+  "num_workers=8",
+  "model.arch=ViT-B-16-quickgelu",
+  "model.pretrained=/kaggle/input/datasets/thunvng/pact-kit/clip/ViT-B-16-quickgelu-openai.pt",
+  "mtil.order=[Aircraft,DTD,EuroSAT,OxfordPet]",
+  "train.iterations=300",
+  "eval.max_samples=1000",
+  "train.log_every=25",
+  "pact.schedule.ramp_iters=50"
+ ],
+ "exit_codes": {
+  "pact_full": 0,
+  "baseline_gate": 0
+ },
+ "runs": {
+  "baseline_gate": {
+   "config_file": "configs/ablation/sai124_gate.yaml",
+   "extra_overrides": [],
+   "key_config": {
+    "pact.use_marg": false,
+    "pact.use_pa": false,
+    "adapter.gate_mode": null,
+    "train.lr": 1e-05,
+    "train.iterations": 300,
+    "train.batch_size": 64,
+    "train.label_smoothing": 0.0,
+    "pact.tau": 0.1,
+    "pact.pa_sigma_rel": 0.22,
+    "seed": 42
+   },
+   "seconds": 472.2999999523163,
+   "main_protocol": null,
+   "summary": {
+    "Transfer": 61.72777777777778,
+    "Avg": 57.893750000000004,
+    "Last": 61.05
+   },
+   "protocols": {
+    "(cũ)": {
+     "Transfer": 61.72777777777778,
+     "Avg": 57.893750000000004,
+     "Last": 61.05
+    }
+   },
+   "per_dataset": {
+    "Transfer": {
+     "DTD": 43.0,
+     "EuroSAT": 54.650000000000006,
+     "OxfordPet": 87.53333333333335
+    },
+    "Avg": {
+     "Aircraft": 26.5,
+     "DTD": 46.525000000000006,
+     "EuroSAT": 70.375,
+     "OxfordPet": 88.17500000000001
+    },
+    "Last": {
+     "Aircraft": 24.3,
+     "DTD": 46.3,
+     "EuroSAT": 83.5,
+     "OxfordPet": 90.1
+    }
+   },
+   "acc_matrix": [
+    [
+     29.1,
+     43.0,
+     53.6,
+     87.2
+    ],
+    [
+     27.5,
+     50.1,
+     55.7,
+     88.1
+    ],
+    [
+     25.1,
+     46.7,
+     88.7,
+     87.3
+    ],
+    [
+     24.3,
+     46.3,
+     83.5,
+     90.1
+    ]
+   ],
+   "router": null,
+   "zero_shot": [
+    23.2,
+    42.3,
+    55.6,
+    88.0
+   ]
+  },
+  "pact_full": {
+   "config_file": "configs/mtil_order1.yaml",
+   "extra_overrides": [],
+   "key_config": {
+    "pact.use_marg": true,
+    "pact.use_pa": true,
+    "adapter.gate_mode": null,
+    "train.lr": 1e-05,
+    "train.iterations": 300,
+    "train.batch_size": 64,
+    "train.label_smoothing": 0.0,
+    "pact.tau": 0.1,
+    "pact.pa_sigma_rel": 0.22,
+    "seed": 42
+   },
+   "seconds": 472.0,
+   "main_protocol": null,
+   "summary": {
+    "Transfer": 58.98333333333333,
+    "Avg": 60.15625,
+    "Last": 63.425
+   },
+   "protocols": {
+    "(cũ)": {
+     "Transfer": 58.98333333333333,
+     "Avg": 60.15625,
+     "Last": 63.425
+    }
+   },
+   "per_dataset": {
+    "Transfer": {
+     "DTD": 42.0,
+     "EuroSAT": 48.65,
+     "OxfordPet": 86.3
+    },
+    "Avg": {
+     "Aircraft": 31.325000000000003,
+     "DTD": 52.35,
+     "EuroSAT": 69.9,
+     "OxfordPet": 87.05
+    },
+    "Last": {
+     "Aircraft": 27.0,
+     "DTD": 50.1,
+     "EuroSAT": 87.3,
+     "OxfordPet": 89.3
+    }
+   },
+   "acc_matrix": [
+    [
+     35.2,
+     42.0,
+     52.3,
+     86.3
+    ],
+    [
+     33.6,
+     61.2,
+     45.0,
+     85.6
+    ],
+    [
+     29.5,
+     56.1,
+     95.0,
+     87.0
+    ],
+    [
+     27.0,
+     50.1,
+     87.3,
+     89.3
+    ]
+   ],
+   "router": null,
+   "zero_shot": [
+    23.2,
+    42.3,
+    55.6,
+    88.0
+   ]
+  },
+  "zero_shot": {
+   "config_file": null,
+   "extra_overrides": null,
+   "key_config": {
+    "pact.use_marg": true,
+    "pact.use_pa": true,
+    "adapter.gate_mode": null,
+    "train.lr": 1e-05,
+    "train.iterations": 300,
+    "train.batch_size": 64,
+    "train.label_smoothing": 0.0,
+    "pact.tau": 0.1,
+    "pact.pa_sigma_rel": 0.22,
+    "seed": 42
+   },
+   "seconds": 246.0,
+   "main_protocol": null,
+   "summary": {
+    "zero_shot_mean": 52.69815482850164
+   },
+   "protocols": {
+    "zero-shot": {
+     "Avg": 52.69815482850164
+    }
+   },
+   "per_dataset": null,
+   "acc_matrix": null,
+   "router": null,
+   "zero_shot": [
+    24.422442244224424,
+    42.819148936170215,
+    54.425925925925924,
+    89.12510220768601
+   ]
+  }
+ }
+}

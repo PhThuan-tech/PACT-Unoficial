@@ -1,0 +1,9 @@
+# Hướng 2 (phân tích): baseline "cô lập theo task".
+# Giống hệt PACT mặc định (adapter mỗi task, gate theo tầng, head học được, đánh giá snapshot),
+# chỉ TẮT hai ràng buộc của PACT: không L_marg, không L_pa (nên alpha / alpha_tilde không còn tác dụng).
+# So Last của protocol oracle_zeroshot với run pact_paper cùng preset, cùng seed:
+#   gần bằng nhau -> phần lớn Last đến từ việc cô lập task lúc test, không đến từ ràng buộc PACT.
+setting: mtil
+output_dir: outputs/analysis_isolation
+mtil: {order: I}
+pact: {use_marg: false, use_pa: false}

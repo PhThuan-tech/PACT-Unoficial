@@ -1,0 +1,459 @@
+{
+ "id": "pact_results_quick_20261125_0140",
+ "created": "2026-11-25 01:40:29",
+ "preset": "quick",
+ "order": [
+  "Aircraft",
+  "DTD",
+  "EuroSAT",
+  "OxfordPet"
+ ],
+ "gpus_per_run": 2,
+ "overrides": [
+  "data_root=/kaggle/working/data",
+  "download=false",
+  "num_workers=8",
+  "model.arch=ViT-B-16-quickgelu",
+  "model.pretrained=/kaggle/input/datasets/thunvng/pact-kit/clip/ViT-B-16-quickgelu-openai.pt",
+  "mtil.order=[Aircraft,DTD,EuroSAT,OxfordPet]",
+  "train.iterations=1000",
+  "eval.max_samples=1000",
+  "train.log_every=25"
+ ],
+ "exit_codes": {
+  "pact_paper": 0,
+  "isolation": 0
+ },
+ "runs": {
+  "isolation": {
+   "config_file": "configs/analysis/isolation_baseline.yaml",
+   "extra_overrides": [],
+   "key_config": {
+    "pact.use_marg": false,
+    "pact.use_pa": false,
+    "adapter.gate_mode": "layerwise",
+    "head.type": "learned",
+    "train.lr": 1e-05,
+    "train.iterations": 1000,
+    "train.batch_size": 64,
+    "train.label_smoothing": 0.2,
+    "pact.tau": 0.1,
+    "pact.pa_sigma_rel": 0.022,
+    "seed": 42
+   },
+   "seconds": 945.0999999046326,
+   "main_protocol": "router",
+   "summary": {
+    "Transfer": 61.71666666666667,
+    "Avg": 70.88125000000001,
+    "Last": 79.5
+   },
+   "protocols": {
+    "router": {
+     "Transfer": 61.71666666666667,
+     "Avg": 70.88125000000001,
+     "Last": 79.5
+    },
+    "oracle_latest": {
+     "Transfer": 61.194444444444436,
+     "Avg": 70.65625,
+     "Last": 79.5
+    },
+    "oracle_zeroshot": {
+     "Transfer": 62.666666666666664,
+     "Avg": 71.23750000000001,
+     "Last": 79.5
+    },
+    "latest": {
+     "Transfer": 61.194444444444436,
+     "Avg": 66.04375,
+     "Last": 70.19999999999999
+    }
+   },
+   "per_dataset": {
+    "Transfer": {
+     "DTD": 45.0,
+     "EuroSAT": 52.45,
+     "OxfordPet": 87.7
+    },
+    "Avg": {
+     "Aircraft": 51.0,
+     "DTD": 68.4,
+     "EuroSAT": 75.075,
+     "OxfordPet": 89.05000000000001
+    },
+    "Last": {
+     "Aircraft": 51.0,
+     "DTD": 76.2,
+     "EuroSAT": 97.7,
+     "OxfordPet": 93.1
+    }
+   },
+   "acc_matrix": [
+    [
+     51.0,
+     45.0,
+     55.3,
+     87.7
+    ],
+    [
+     51.0,
+     76.2,
+     49.6,
+     87.7
+    ],
+    [
+     51.0,
+     76.2,
+     97.7,
+     87.7
+    ],
+    [
+     51.0,
+     76.2,
+     97.7,
+     93.1
+    ]
+   ],
+   "router": [
+    {
+     "Aircraft": {
+      "to": {
+       "Aircraft": 1.0
+      },
+      "correct": 1.0
+     },
+     "DTD": {
+      "to": {
+       "CLIP": 1.0
+      }
+     },
+     "EuroSAT": {
+      "to": {
+       "CLIP": 1.0
+      }
+     },
+     "OxfordPet": {
+      "to": {
+       "CLIP": 1.0
+      }
+     }
+    },
+    {
+     "Aircraft": {
+      "to": {
+       "Aircraft": 1.0
+      },
+      "correct": 1.0
+     },
+     "DTD": {
+      "to": {
+       "DTD": 1.0
+      },
+      "correct": 1.0
+     },
+     "EuroSAT": {
+      "to": {
+       "DTD": 1.0
+      }
+     },
+     "OxfordPet": {
+      "to": {
+       "CLIP": 1.0
+      }
+     }
+    },
+    {
+     "Aircraft": {
+      "to": {
+       "Aircraft": 1.0
+      },
+      "correct": 1.0
+     },
+     "DTD": {
+      "to": {
+       "DTD": 1.0
+      },
+      "correct": 1.0
+     },
+     "EuroSAT": {
+      "to": {
+       "EuroSAT": 1.0
+      },
+      "correct": 1.0
+     },
+     "OxfordPet": {
+      "to": {
+       "CLIP": 1.0
+      }
+     }
+    },
+    {
+     "Aircraft": {
+      "to": {
+       "Aircraft": 1.0
+      },
+      "correct": 1.0
+     },
+     "DTD": {
+      "to": {
+       "DTD": 1.0
+      },
+      "correct": 1.0
+     },
+     "EuroSAT": {
+      "to": {
+       "EuroSAT": 1.0
+      },
+      "correct": 1.0
+     },
+     "OxfordPet": {
+      "to": {
+       "OxfordPet": 1.0
+      },
+      "correct": 1.0
+     }
+    }
+   ],
+   "zero_shot": [
+    23.1,
+    45.0,
+    55.3,
+    87.7
+   ]
+  },
+  "pact_paper": {
+   "config_file": "configs/mtil_order1.yaml",
+   "extra_overrides": [],
+   "key_config": {
+    "pact.use_marg": true,
+    "pact.use_pa": true,
+    "adapter.gate_mode": "layerwise",
+    "head.type": "learned",
+    "train.lr": 1e-05,
+    "train.iterations": 1000,
+    "train.batch_size": 64,
+    "train.label_smoothing": 0.2,
+    "pact.tau": 0.1,
+    "pact.pa_sigma_rel": 0.022,
+    "seed": 42
+   },
+   "seconds": 1395.5,
+   "main_protocol": "router",
+   "summary": {
+    "Transfer": 62.416666666666664,
+    "Avg": 69.73125,
+    "Last": 77.2
+   },
+   "protocols": {
+    "router": {
+     "Transfer": 62.416666666666664,
+     "Avg": 69.73125,
+     "Last": 77.2
+    },
+    "oracle_latest": {
+     "Transfer": 62.42222222222222,
+     "Avg": 69.71249999999999,
+     "Last": 77.2
+    },
+    "oracle_zeroshot": {
+     "Transfer": 62.666666666666664,
+     "Avg": 69.825,
+     "Last": 77.2
+    },
+    "latest": {
+     "Transfer": 62.42222222222222,
+     "Avg": 65.25625,
+     "Last": 68.7
+    }
+   },
+   "per_dataset": {
+    "Transfer": {
+     "DTD": 45.0,
+     "EuroSAT": 54.55,
+     "OxfordPet": 87.7
+    },
+    "Avg": {
+     "Aircraft": 50.6,
+     "DTD": 64.65,
+     "EuroSAT": 75.025,
+     "OxfordPet": 88.65
+    },
+    "Last": {
+     "Aircraft": 50.6,
+     "DTD": 71.2,
+     "EuroSAT": 95.5,
+     "OxfordPet": 91.5
+    }
+   },
+   "acc_matrix": [
+    [
+     50.6,
+     45.0,
+     55.3,
+     87.7
+    ],
+    [
+     50.6,
+     71.2,
+     53.8,
+     87.7
+    ],
+    [
+     50.6,
+     71.2,
+     95.5,
+     87.7
+    ],
+    [
+     50.6,
+     71.2,
+     95.5,
+     91.5
+    ]
+   ],
+   "router": [
+    {
+     "Aircraft": {
+      "to": {
+       "Aircraft": 1.0
+      },
+      "correct": 1.0
+     },
+     "DTD": {
+      "to": {
+       "CLIP": 1.0
+      }
+     },
+     "EuroSAT": {
+      "to": {
+       "CLIP": 1.0
+      }
+     },
+     "OxfordPet": {
+      "to": {
+       "CLIP": 1.0
+      }
+     }
+    },
+    {
+     "Aircraft": {
+      "to": {
+       "Aircraft": 1.0
+      },
+      "correct": 1.0
+     },
+     "DTD": {
+      "to": {
+       "DTD": 1.0
+      },
+      "correct": 1.0
+     },
+     "EuroSAT": {
+      "to": {
+       "DTD": 1.0
+      }
+     },
+     "OxfordPet": {
+      "to": {
+       "CLIP": 1.0
+      }
+     }
+    },
+    {
+     "Aircraft": {
+      "to": {
+       "Aircraft": 1.0
+      },
+      "correct": 1.0
+     },
+     "DTD": {
+      "to": {
+       "DTD": 1.0
+      },
+      "correct": 1.0
+     },
+     "EuroSAT": {
+      "to": {
+       "EuroSAT": 1.0
+      },
+      "correct": 1.0
+     },
+     "OxfordPet": {
+      "to": {
+       "CLIP": 1.0
+      }
+     }
+    },
+    {
+     "Aircraft": {
+      "to": {
+       "Aircraft": 1.0
+      },
+      "correct": 1.0
+     },
+     "DTD": {
+      "to": {
+       "DTD": 1.0
+      },
+      "correct": 1.0
+     },
+     "EuroSAT": {
+      "to": {
+       "EuroSAT": 1.0
+      },
+      "correct": 1.0
+     },
+     "OxfordPet": {
+      "to": {
+       "OxfordPet": 1.0
+      },
+      "correct": 1.0
+     }
+    }
+   ],
+   "zero_shot": [
+    23.1,
+    45.0,
+    55.3,
+    87.7
+   ]
+  },
+  "zero_shot": {
+   "config_file": null,
+   "extra_overrides": null,
+   "key_config": {
+    "pact.use_marg": true,
+    "pact.use_pa": true,
+    "adapter.gate_mode": "layerwise",
+    "head.type": "learned",
+    "train.lr": 1e-05,
+    "train.iterations": 1000,
+    "train.batch_size": 64,
+    "train.label_smoothing": 0.2,
+    "pact.tau": 0.1,
+    "pact.pa_sigma_rel": 0.022,
+    "seed": 42
+   },
+   "seconds": 141.70000004768372,
+   "main_protocol": null,
+   "summary": {
+    "zero_shot_mean": 53.32306235580268
+   },
+   "protocols": {
+    "zero-shot": {
+     "Avg": 53.32306235580268
+    }
+   },
+   "per_dataset": null,
+   "acc_matrix": null,
+   "router": null,
+   "zero_shot": [
+    24.302430243024304,
+    44.734042553191486,
+    55.18518518518518,
+    89.07059144180975
+   ]
+  }
+ }
+}
