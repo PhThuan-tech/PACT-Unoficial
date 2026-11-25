@@ -38,3 +38,10 @@ htmlcov/
 *.log
 .DS_Store
 Thumbs.db
+
+# reports and research_note agents
+reports/
+research_notes/
+
+# Experiment artifacts (evaluator.pt, router_offline outputs); LOG.md and runs/ are tracked
+/experiments/artifacts/
