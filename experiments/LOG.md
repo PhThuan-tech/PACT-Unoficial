@@ -218,3 +218,252 @@ Quét mịn delta (bước 0.01 từ 0.02 đến 0.10, ngày 2026-11-26): cả h
 
 **Kết luận:** Chưa kết luận được, chỉ là tín hiệu sơ bộ (1 seed, 4 task, `eval.max_samples=1000`). Isolation có Last cao hơn PACT 2.3 điểm (79.5 so với 77.2), cao hơn ở cả ba task so sánh được, nên ràng buộc PACT chưa cho thấy đóng góp vào Last. Transfer: `oracle_latest` 62.42 (PACT) và 61.19 (isolation), đều thấp hơn zero-shot 62.67. Router theo batch đúng 100% là kết quả dễ (4 dataset rất khác nhau, đo theo batch), không phải bằng chứng router tốt. Việc tiếp theo: chạy `mid` hai seed để xác nhận.
 
+<!-- run:pact_results_full_20261125_1155 -->
+## pact_results_full_20261125_1155
+
+- **Preset:** full (11 dataset: Aircraft, Caltech101, CIFAR100, DTD, EuroSAT, Flowers, Food, MNIST, OxfordPet, StanfordCars, SUN397)
+- **Tạo lúc:** 2026-11-25 11:55:56 | GPU mỗi run: 2
+- **Code:** `20261125-1441-627d990-c92d780a` (commit 627d990, nhánh main)
+- **Exit code:** tất cả 0
+- **Ghi chú:** iso_s42, full, 2 GPU, seed 42 (chạy bởi Thuận)
+
+### Phương pháp và thời gian
+
+| run | config | override thêm | thay đổi chính | thời gian train+eval |
+|---|---|---|---|---|
+| iso_s42 | configs/analysis/isolation_baseline.yaml | seed=42 | pact.use_marg=False, pact.use_pa=False, adapter.gate_mode=layerwise, head.type=learned, train.lr=1e-05, train.iterations=3000, seed=42 | 3h43m |
+
+### Kết quả (Transfer / Avg / Last)
+
+| run | latest | oracle_latest | oracle_zeroshot | router |
+|---|---|---|---|---|
+| iso_s42 | 65.82 / 72.33 / 79.75 | 65.82 / 77.25 / 87.64 | 69.47 / 78.84 / 87.64 | 66.53 / 73.34 / 80.20 |
+
+Last theo từng dataset (protocol chính):
+
+- **iso_s42** (router): Aircraft 63.01, Caltech101 97.47, CIFAR100 72.39, DTD 78.94, EuroSAT 85.91, Flowers 83.18, Food 91.50, MNIST 55.56, OxfordPet 94.52, StanfordCars 82.34, SUN397 77.42
+
+Cột đã học bất biến theo Bảng 8 (kiểm tra trên oracle_zeroshot; router có thể đổi quyết định giữa các hàng): iso_s42: có [oracle_zeroshot]
+
+Chi tiết (đọc từ `results.json`, ngày 2026-11-25; chưa có run PACT cùng seed để so):
+
+- **Thời gian:** 3h43m trên 2 GPU (ước lượng trước đó 2.5-3.5 giờ).
+- **Snapshot hợp lệ:** cả `oracle_zeroshot` và `oracle_latest` bất biến 0 ô lệch (Bảng 8 đạt ở dạng này). Protocol `router` lệch 4 ô là bình thường vì quyết định router thay đổi theo hàng.
+- **Zero-shot khớp Khánh:** Transfer zero-shot 69.47.
+- **Đường chéo (isolation) so Bảng 8 của PACT:** trung bình 87.64 so với 90.54 (-2.90). Lệch nhiều nhất: SUN397 77.42 (-9.18), StanfordCars 82.34 (-7.56), CIFAR100 85.07 (-6.14), Flowers 96.00 (-2.59), Aircraft 63.01 (-2.57), Food 91.50 (-2.31); Caltech101 +0.87; EuroSAT -0.17, MNIST -0.33, OxfordPet -0.84, DTD -1.12. Chưa kết luận được ràng buộc PACT đóng góp bao nhiêu cho khoảng cách này, vì thiếu `pact_s42` cùng seed. Siêu tham số chưa biết (lr 1e-5 là giả định) cũng có thể là nguyên nhân.
+- **Transfer:** `oracle_latest` 65.82, thấp hơn zero-shot 69.47 (-3.65): mô hình mới nhất không có ràng buộc làm hại dữ liệu chưa học. `oracle_zeroshot` bằng zero-shot theo định nghĩa. Cần xem PACT có giữ được Transfer không.
+- **Router của repo kém hơn nhiều ở 11 dataset so với 4 dataset:** Last `router` 80.20 so với 87.64 của `oracle_zeroshot` (-7.4); Transfer `router` 66.53. Hàng cuối: MNIST bị gửi 100% sang snapshot Caltech101 (55.56 so với 99.20), EuroSAT 100% sang SUN397 (85.91 so với 97.81), CIFAR100 sang SUN397 (90%) và Caltech101 (10%) (72.39 so với 85.07), Flowers sang SUN397 (80%) và Caltech101 (20%) (83.18 so với 96.00). Kết quả "router đúng 100%" ở preset `quick` (4 dataset) không còn đúng khi 11 dataset.
+- **Router theo từng ảnh** (`analysis/router_persample.py`, 2000 ảnh test mỗi dataset, hàng t=1..10 trung bình): `proto` (router của repo) gửi đúng 69.0% (từng ảnh) / 75.5% (theo batch), gửi nhầm unseen sang snapshot 58.7% / 51.6%, AUROC 0.813 / 0.874. Điểm Mahalanobis (kiểu DIKI) tốt nhất: gửi đúng 92.6% / 100%, unseen gửi nhầm 27.0% / 22.0%, AUROC 0.951 / 0.996, FPR95 0.247 / 0.010. Thứ tự AUROC (từng ảnh): maha 0.951 > knn 0.911 > proto 0.813 > maxcos 0.796 > mcm 0.582. Theo batch, tỷ lệ gửi đúng cao hơn từng ảnh 6-19 điểm ở mọi điểm số, nhưng gửi nhầm unseen chỉ giảm với proto, knn, maha (maxcos và mcm không giảm), nên một phần chất lượng của router theo batch đến từ giả định một dataset mỗi batch.
+- **Cần làm tiếp:** (1) chạy `pact_s42` và hai seed 2026 để áp quy tắc quyết định bằng `tools/compare_runs.py`; (2) thử Mahalanobis làm router trong run thật (cần đo Transfer/Last, vì `router_persample.py` chỉ đo chất lượng chọn task); (3) đo lại bằng hai seed.
+
+**Kết luận:** Isolation baseline cho Last 87.64 (snapshot đúng, 3h43m); router mặc định của repo là điểm yếu lớn ở 11 dataset (mất 7.4 điểm Last, Transfer dưới zero-shot) và điểm Mahalanobis cải thiện rõ về chất lượng chọn task; so với PACT phải chờ `pact_s42`.
+
+
+<!-- run:pact_results_full_20261125_1941 -->
+## pact_results_full_20261125_1941
+
+- **Preset:** full (11 dataset: Aircraft, Caltech101, CIFAR100, DTD, EuroSAT, Flowers, Food, MNIST, OxfordPet, StanfordCars, SUN397)
+- **Tạo lúc:** 2026-11-25 19:41:02 | GPU mỗi run: 2
+- **Code:** `20261125-2125-20242ff-032555cc` (commit 20242ff, nhánh main)
+- **Exit code:** tất cả 0
+- **Ghi chú:** pact_s42, full, 2 GPU, seed 42, lr 1e-5 (Phát; zip gốc bị nén lồng thư mục, đã nén lại phẳng để ghi log)
+
+### Phương pháp và thời gian
+
+| run | config | override thêm | thay đổi chính | thời gian train+eval |
+|---|---|---|---|---|
+| pact_s42 | configs/mtil_order1.yaml | seed=42 | pact.use_marg=True, pact.use_pa=True, adapter.gate_mode=layerwise, head.type=learned, train.lr=1e-05, train.iterations=3000, seed=42 | 4h38m |
+
+### Kết quả (Transfer / Avg / Last)
+
+| run | latest | oracle_latest | oracle_zeroshot | router |
+|---|---|---|---|---|
+| pact_s42 | 68.63 / 72.67 / 77.78 | 68.63 / 76.36 / 83.74 | 69.47 / 76.74 / 83.74 | 68.76 / 73.60 / 77.74 |
+
+Last theo từng dataset (protocol chính):
+
+- **pact_s42** (router): Aircraft 59.92, Caltech101 96.49, CIFAR100 74.18, DTD 72.82, EuroSAT 82.50, Flowers 77.17, Food 90.35, MNIST 58.63, OxfordPet 92.89, StanfordCars 74.85, SUN397 75.33
+
+Cột đã học bất biến theo Bảng 8 (kiểm tra trên oracle_zeroshot; router có thể đổi quyết định giữa các hàng): pact_s42: có [oracle_zeroshot]
+
+Chi tiết (so với `iso_s42`, cùng seed 42, cùng lr 1e-5, cấu hình chỉ khác `pact.use_marg` / `pact.use_pa`):
+
+- **Ràng buộc PACT đổi Last lấy Transfer.** Last (`oracle_zeroshot`) 83.74 so với 87.64 của iso (-3.90), thấp hơn ở cả 11 dataset: StanfordCars -7.5, DTD -6.5, Flowers -6.0, CIFAR100 -5.0, EuroSAT -4.5, MNIST -4.1, Aircraft -3.1, SUN397 -2.1, OxfordPet -1.9, Food -1.2, Caltech101 -1.0. Transfer (`oracle_latest`) 68.63 so với 65.82 (+2.81), cao hơn ở 10/10 dataset chưa học (EuroSAT 53.3 so với 47.0, CIFAR100 67.1 so với 62.1), nhưng vẫn dưới zero-shot 69.47 (-0.84).
+- **Cơ chế:** α̃ bật ở iteration 600 (20%) ở cả 11 task (`converged`, φ luôn dưới γ = 0.1). Sau đó α khoảng 0.90-0.97 và `d_mlp` chỉ 0.002-0.01: L_pa giữ adapter sát MLP gốc trong 80% thời gian còn lại. Loss cuối task của PACT cao hơn iso ở mọi task.
+- **So với paper (71.76 / 81.05 / 90.54):** còn -3.13 Transfer, -4.69 Avg, -6.80 Last. Lệch lớn nhất: StanfordCars -15.1, SUN397 -11.3, CIFAR100 -11.2 (iso cũng thấp ở ba dataset này: chưa train đủ).
+- **Nhiễu seed:** iso_s42 so với iso_s2026 chênh khoảng 0.05 Last, nên -3.90 lớn hơn nhiễu khoảng 80 lần.
+- **Lưu ý:** hai run dùng hai bản code khác nhau (`627d990` và `20242ff`). Commit `20242ff` chưa có trên GitHub, cần Phát push để đối chiếu. Cả hai run dùng lr 1e-5, không phải 5e-5 đã chốt sau pilot.
+
+**Kết luận:** Last cao chủ yếu nhờ cô lập task (snapshot), không nhờ ràng buộc. Ràng buộc PACT giúp Transfer nhưng làm giảm Last. Quy tắc quyết định chính thức cần `pact_s2026`.
+
+
+<!-- run:pact_results_full_20261126_0927 -->
+## pact_results_full_20261126_0927
+
+- **Preset:** full (11 dataset: Aircraft, Caltech101, CIFAR100, DTD, EuroSAT, Flowers, Food, MNIST, OxfordPet, StanfordCars, SUN397)
+- **Tạo lúc:** 2026-11-26 09:27:30 | GPU mỗi run: 2
+- **Code:** `20261125-1441-627d990-c92d780a` (commit 627d990, nhánh main)
+- **Exit code:** tất cả 0
+- **Ghi chú:** BẢN TRÙNG của iso_s2026 (Thuận chạy nhầm config, định chạy pact_s2026 thay Đức Anh). Bản chính thức: `pact_results_full_20261125_1326` (Khánh).
+
+### Phương pháp và thời gian
+
+| run | config | override thêm | thay đổi chính | thời gian train+eval |
+|---|---|---|---|---|
+| iso_s2026 | configs/analysis/isolation_baseline.yaml | seed=2026 | pact.use_marg=False, pact.use_pa=False, adapter.gate_mode=layerwise, head.type=learned, train.lr=1e-05, train.iterations=3000, seed=2026 | 3h42m |
+
+### Kết quả (Transfer / Avg / Last)
+
+| run | latest | oracle_latest | oracle_zeroshot | router |
+|---|---|---|---|---|
+| iso_s2026 | 65.81 / 72.31 / 79.75 | 65.81 / 77.20 / 87.63 | 69.47 / 78.81 / 87.63 | 66.49 / 73.31 / 79.52 |
+
+Last theo từng dataset (protocol chính):
+
+- **iso_s2026** (router): Aircraft 62.56, Caltech101 97.52, CIFAR100 64.90, DTD 78.99, EuroSAT 86.13, Flowers 83.20, Food 91.52, MNIST 55.43, OxfordPet 94.82, StanfordCars 82.34, SUN397 77.37
+
+Cột đã học bất biến theo Bảng 8 (kiểm tra trên oracle_zeroshot; router có thể đổi quyết định giữa các hàng): iso_s2026: có [oracle_zeroshot]
+
+Chi tiết: run trùng config và seed với `iso_s2026` của Khánh (`pact_results_full_20261125_1326`), chạy lại độc lập (bản build khác: `c92d780a` so với `032555cc`, cùng commit 627d990).
+
+- So với bản của Khánh: mọi ô của cả 4 ma trận protocol trùng khít (chênh lớn nhất 0.0).
+- Thời gian: 3h42m (bản của Khánh 3h38m).
+
+**Kết luận:** pipeline tất định. Cùng code, config và seed thì cho kết quả trùng từng bit giữa hai phiên Kaggle khác nhau. Run này không thêm thông tin seed: phân tích iso_s2026 xem ở mục `pact_results_full_20261125_1326`. Seed 2026 vẫn thiếu `pact_s2026` (Đức Anh).
+
+
+<!-- run:pact_results_mid_20261126_1233 -->
+## pact_results_mid_20261126_1233
+
+- **Preset:** mid (8 dataset: Aircraft, Caltech101, CIFAR100, DTD, EuroSAT, MNIST, OxfordPet, StanfordCars)
+- **Tạo lúc:** 2026-11-26 12:33:31 | GPU mỗi run: 1
+- **Code:** `20261126-1548-cdfa82a+dirty-37276d26` (commit cdfa82a, nhánh analysis/phase-a-b, có thay đổi chưa commit)
+- **Exit code:** tất cả 0
+- **Ghi chú:** Giai đoạn B: preset mid (8 dataset, 2000 iter), lr 5e-5, seed 42, 4 run x 1 GPU, kèm giai đoạn A (reeval_branch)
+
+### Phương pháp và thời gian
+
+| run | config | override thêm | thay đổi chính | thời gian train+eval |
+|---|---|---|---|---|
+| iso_base | configs/analysis/isolation_baseline.yaml | train.lr=5e-5 seed=42 | pact.use_marg=False, pact.use_pa=False, adapter.gate_mode=layerwise, head.type=learned, train.lr=5e-05, train.iterations=2000, seed=42 | 2h19m |
+| pact_base | configs/mtil_order1.yaml | train.lr=5e-5 seed=42 | pact.use_marg=True, pact.use_pa=True, adapter.gate_mode=layerwise, head.type=learned, train.lr=5e-05, train.iterations=2000, seed=42 | 3h22m |
+| pact_late | configs/mtil_order1.yaml | train.lr=5e-5 seed=42 pact.schedule.warmup_frac=0.6 pact.schedule.latest_frac=0.8 | pact.use_marg=True, pact.use_pa=True, adapter.gate_mode=layerwise, head.type=learned, train.lr=5e-05, train.iterations=2000, seed=42 | 2h51m |
+| pact_softpa | configs/mtil_order1.yaml | train.lr=5e-5 seed=42 pact.pa_sigma_rel=0.05 | pact.use_marg=True, pact.use_pa=True, adapter.gate_mode=layerwise, head.type=learned, train.lr=5e-05, train.iterations=2000, seed=42 | 3h21m |
+
+### Kết quả (Transfer / Avg / Last)
+
+| run | latest | oracle_latest | oracle_zeroshot | router |
+|---|---|---|---|---|
+| iso_base | 59.72 / 67.36 / 80.44 | 59.72 / 74.16 / 89.28 | 67.32 / 77.85 / 89.28 | 60.31 / 68.97 / 78.51 |
+| pact_base | 66.69 / 71.83 / 79.76 | 66.69 / 75.52 / 85.38 | 67.32 / 75.75 / 85.38 | 66.79 / 72.56 / 79.19 |
+| pact_late | 65.86 / 70.69 / 78.54 | 65.86 / 74.78 / 84.96 | 67.32 / 75.39 / 84.96 | 66.06 / 71.66 / 78.44 |
+| pact_softpa | 65.18 / 71.00 / 80.08 | 65.18 / 75.73 / 87.09 | 67.32 / 76.75 / 87.09 | 65.60 / 72.30 / 79.73 |
+
+Last theo từng dataset (protocol chính):
+
+- **iso_base** (router): Aircraft 66.05, Caltech101 97.81, CIFAR100 51.00, DTD 80.27, EuroSAT 98.85, MNIST 50.35, OxfordPet 95.45, StanfordCars 88.30
+- **pact_base** (router): Aircraft 61.15, Caltech101 96.95, CIFAR100 68.05, DTD 76.70, EuroSAT 94.85, MNIST 61.80, OxfordPet 93.15, StanfordCars 80.85
+- **pact_late** (router): Aircraft 60.85, Caltech101 96.72, CIFAR100 67.50, DTD 73.83, EuroSAT 93.45, MNIST 58.30, OxfordPet 93.30, StanfordCars 83.55
+- **pact_softpa** (router): Aircraft 64.05, Caltech101 97.41, CIFAR100 65.40, DTD 77.18, EuroSAT 96.85, MNIST 59.45, OxfordPet 93.75, StanfordCars 83.75
+
+Cột đã học bất biến theo Bảng 8 (kiểm tra trên oracle_zeroshot; router có thể đổi quyết định giữa các hàng): iso_base: có [oracle_zeroshot]; pact_base: có [oracle_zeroshot]; pact_late: có [oracle_zeroshot]; pact_softpa: có [oracle_zeroshot]
+
+Chi tiết (preset mid: Aircraft, Caltech101, CIFAR100, DTD, EuroSAT, MNIST, OxfordPet, StanfordCars; 2000 iter/task; lr 5e-5; seed 42; zero-shot Transfer trên thứ tự này 67.32). Mỗi run đổi một yếu tố so với `pact_base`:
+
+| run | Transfer (oracle_latest) | Last (oracle_zeroshot) | Δ Transfer | Δ Last | α̃ bật ở | thời gian |
+|---|---|---|---|---|---|---|
+| pact_base | 66.69 | 85.38 | – | – | it 400 (20%) | 202 phút |
+| iso_base | 59.72 | 89.28 | -6.97 | +3.90 | – | 139 phút |
+| pact_late (warmup 0.6, latest 0.8) | 65.86 | 84.96 | -0.83 | -0.43 | it 1200 (60%) | 172 phút |
+| pact_softpa (pa_sigma_rel 0.05) | 65.18 | 87.09 | -1.50 | +1.70 | it 400 (20%) | 202 phút |
+
+- **Ở lr 5e-5, bỏ ràng buộc làm Transfer sụp:** iso EuroSAT 40.7 (zero-shot 55.2), StanfordCars 49.1 (64.3), CIFAR100 57.7 (69.3). Ràng buộc PACT cần thiết cho Transfer, đánh đổi khoảng 3.9 Last.
+- **`pact_late`:** kém hơn baseline ở cả Transfer và Last: bật α̃ muộn không giúp. Loại.
+- **`pact_softpa`:** dịch dọc đường đánh đổi (+1.7 Last, -1.5 Transfer), Avg gần như bằng (75.73 so với 75.52). Không trội hơn baseline.
+- **Giai đoạn A (`reeval_branch`, 2000 ảnh test/dataset), Last / Transfer (oracle_latest):**
+  - pact_base: cond/cond 85.38 / 66.69; marg/marg 87.00 / 64.08; marg/cond 83.97 / 64.08.
+  - pact_softpa: cond/cond 87.09 / 65.18; marg/marg 88.61 / 58.19.
+  - pact_late: cond/cond 84.96 / 65.86; marg/marg 87.17 / 63.26.
+  - iso_base: cond/cond 89.28 / 59.72; marg/marg 35.54 / 37.02 (iso không train adapter đứng riêng nên marg sụp: đúng dự đoán).
+  - Đường chéo pact_base, cond -> marg: CIFAR100 81.6 -> 85.0, EuroSAT 94.8 -> 97.7, MNIST 97.8 -> 99.2, OxfordPet 93.2 -> 94.6, StanfordCars 80.8 -> 84.8; Aircraft, Caltech101, DTD gần như không đổi.
+- **Pha loãng adapter được xác nhận:** nhánh cond (trung bình adapter 1..k) làm giảm điểm task đã học, nhất là các task sau. Kết hợp "đã học dùng marg, chưa học dùng cond" (protocol mới `oracle_hybrid`, commit `38e87dc`): pact_base Last 87.0 / Transfer 66.7; pact_softpa Last 88.6 / Transfer 65.2 (gần Last của iso 89.3, Transfer cao hơn iso 5.5).
+- **Code:** build `cdfa82a+dirty` (working tree còn `experiments/LOG.md`, `tools/log_run.py` chưa commit; không ảnh hưởng train).
+
+**Kết luận:** (1) Ở lr 5e-5 ràng buộc PACT cần thiết cho Transfer; bật muộn không giúp, nới L_pa chỉ đổi Transfer lấy Last. (2) Nhánh cond pha loãng adapter: đánh giá dữ liệu đã học bằng nhánh marg tăng khoảng 1.6 Last mà không đổi Transfer; đây có thể là cách đánh giá của paper. (3) Mọi cấu hình vẫn có Transfer dưới zero-shot, chưa giải thích được. Bước tiếp: chạy full với lr 5e-5 và `oracle_hybrid` (lượt sau).
+
+
+<!-- run:pact_results_full_20261125_1326 -->
+## pact_results_full_20261125_1326
+
+- **Preset:** full (11 dataset: Aircraft, Caltech101, CIFAR100, DTD, EuroSAT, Flowers, Food, MNIST, OxfordPet, StanfordCars, SUN397)
+- **Tạo lúc:** 2026-11-25 13:26:21 | GPU mỗi run: 2
+- **Code:** `20261125-1633-627d990-032555cc` (commit 627d990, nhánh main)
+- **Exit code:** tất cả 0
+- **Ghi chú:** iso_s2026, full, 2 GPU, seed 2026, lr 1e-5 (Khánh chạy; bản chính thức của iso_s2026)
+
+### Phương pháp và thời gian
+
+| run | config | override thêm | thay đổi chính | thời gian train+eval |
+|---|---|---|---|---|
+| iso_s2026 | configs/analysis/isolation_baseline.yaml | seed=2026 | pact.use_marg=False, pact.use_pa=False, adapter.gate_mode=layerwise, head.type=learned, train.lr=1e-05, train.iterations=3000, seed=2026 | 3h38m |
+
+### Kết quả (Transfer / Avg / Last)
+
+| run | latest | oracle_latest | oracle_zeroshot | router |
+|---|---|---|---|---|
+| iso_s2026 | 65.81 / 72.31 / 79.75 | 65.81 / 77.20 / 87.63 | 69.47 / 78.81 / 87.63 | 66.49 / 73.31 / 79.52 |
+
+Last theo từng dataset (protocol chính):
+
+- **iso_s2026** (router): Aircraft 62.56, Caltech101 97.52, CIFAR100 64.90, DTD 78.99, EuroSAT 86.13, Flowers 83.20, Food 91.52, MNIST 55.43, OxfordPet 94.82, StanfordCars 82.34, SUN397 77.37
+
+Cột đã học bất biến theo Bảng 8 (kiểm tra trên oracle_zeroshot; router có thể đổi quyết định giữa các hàng): iso_s2026: có [oracle_zeroshot]
+
+Chi tiết (so với `iso_s42`, cấu hình chỉ khác seed, cùng commit `627d990`):
+
+- Seed có tác dụng thật: loss theo iteration khác nhau ở mọi bản ghi.
+- Kết quả gần như trùng: `oracle_zeroshot` Last 87.64 -> 87.63, Avg 78.84 -> 78.81; `oracle_latest` Transfer 65.82 -> 65.81. Chênh từng dataset tối đa 0.45 (Aircraft). `router` Last 80.20 -> 79.52 (-0.68), vì router theo batch nhạy hơn.
+- Bảng 8: cột đã học bất biến (OK). Zero-shot trùng với seed 42.
+- Thời gian: 3h38m train+eval trên 2 GPU (seed 42: 3h43m).
+- Bản chạy lại của Thuận (`pact_results_full_20261126_0927`, cùng config và seed) trùng khít từng ô, tức là pipeline tất định.
+
+**Kết luận:** nhiễu do seed ở preset full khoảng ±0.05 điểm (Last, Transfer), nhỏ hơn mọi khác biệt giữa các cấu hình đang so. Còn thiếu `pact_s2026` để `tools/compare_runs.py` kết luận với 2 seed.
+
+
+<!-- run:pact_results_full_20261126_1523 -->
+## pact_results_full_20261126_1523
+
+- **Preset:** full (11 dataset: Aircraft, Caltech101, CIFAR100, DTD, EuroSAT, Flowers, Food, MNIST, OxfordPet, StanfordCars, SUN397)
+- **Tạo lúc:** 2026-11-26 15:23:53 | GPU mỗi run: 4
+- **Code:** `20261125-1441-627d990-c92d780a` (commit 627d990, nhánh main)
+- **Exit code:** tất cả 0
+- **Ghi chú:** pact_s2026, full, 2 GPU, seed 2026, lr 1e-5 (Đức Anh)
+
+### Phương pháp và thời gian
+
+| run | config | override thêm | thay đổi chính | thời gian train+eval |
+|---|---|---|---|---|
+| pact_s2026 | configs/mtil_order1.yaml | seed=2026 | pact.use_marg=True, pact.use_pa=True, adapter.gate_mode=layerwise, head.type=learned, train.lr=1e-05, train.iterations=3000, seed=2026 | 2h32m |
+
+### Kết quả (Transfer / Avg / Last)
+
+| run | latest | oracle_latest | oracle_zeroshot | router |
+|---|---|---|---|---|
+| pact_s2026 | 68.64 / 72.66 / 77.80 | 68.64 / 76.37 / 83.75 | 69.47 / 76.75 / 83.75 | 68.79 / 73.66 / 77.39 |
+
+Last theo từng dataset (protocol chính):
+
+- **pact_s2026** (router): Aircraft 59.92, Caltech101 96.54, CIFAR100 69.75, DTD 73.09, EuroSAT 82.57, Flowers 77.18, Food 90.37, MNIST 58.72, OxfordPet 93.05, StanfordCars 74.72, SUN397 75.41
+
+Cột đã học bất biến theo Bảng 8 (kiểm tra trên oracle_zeroshot; router có thể đổi quyết định giữa các hàng): pact_s2026: có [oracle_zeroshot]
+
+Chi tiết (so với `iso_s2026` cùng seed và `pact_s42`; chạy 4 GPU, các run kia 2 GPU):
+
+- **PACT so với iso, seed 2026:** `oracle_zeroshot` Last 83.75 so với 87.63 (-3.87); `oracle_latest` Transfer 68.64 so với 65.81 (+2.83). Seed 42 cho -3.90 và +2.81. PACT thấp hơn iso ở cả 11 dataset; chênh nhiều nhất ở StanfordCars (-7.6), DTD (-6.4), Flowers (-5.9), CIFAR100 (-5.0).
+- **Nhiễu seed của PACT:** so với `pact_s42`, Last 83.74 -> 83.75 và Transfer 68.63 -> 68.64; mỗi dataset chênh tối đa 0.13 (StanfordCars).
+- **Bản code:** `pact_s42` chạy commit 20242ff, các run còn lại chạy 627d990 (hai hash build). Kết quả PACT trùng nhau giữa hai bản code, nên cảnh báo của `compare_runs` không ảnh hưởng kết luận.
+- **Thời gian:** 2h32m train+eval trên 4 GPU, so với 4h38m trên 2 GPU (`pact_s42`), nhanh hơn khoảng 1.8 lần.
+- Transfer vẫn thấp hơn zero-shot 69.47 khoảng 0.8 điểm.
+
+**Kết luận:** đã đủ 4 run full (PACT và iso, seed 42 và 2026). Theo `tools/compare_runs.py`, chênh Last trung bình -3.88 và cùng dấu ở cả 2 seed, nên ràng buộc PACT (L_marg, L_pa) **không đóng góp vào Last** ở cấu hình lr 1e-5: nó đổi Last lấy Transfer (+2.8) nhưng chưa vượt được zero-shot. Bước tiếp theo: chạy full với lr 5e-5 và oracle_hybrid, vì giai đoạn B cho thấy hai thay đổi này thu hẹp khoảng cách.
+

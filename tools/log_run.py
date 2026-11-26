@@ -102,6 +102,7 @@ def collect(path):
                 "key_config": key_config(z, run), "seconds": duration(z, f"outputs/{run}/log.jsonl"),
                 "main_protocol": res.get("main_protocol"), "summary": res.get("summary"),
                 "protocols": protocols,
+                "protocol_matrices": {p: v.get("acc_matrix") for p, v in (res.get("protocols") or {}).items() if v.get("acc_matrix")},
                 "per_dataset": res.get("per_dataset"), "acc_matrix": res.get("acc_matrix"),
                 "router": res.get("router"), "zero_shot": res.get("zero_shot")}
             if f"outputs/{run}/evaluator.pt" in z.namelist():
@@ -148,9 +149,15 @@ def render(d, note):
         last = ((r.get("per_dataset") or {}).get("Last")) or {}
         if last:
             lines.append(f"- **{name}** ({r.get('main_protocol')}): " + ", ".join(f"{k} {f2(v)}" for k, v in last.items()))
-    checks = [f"{name}: {invariance(r.get('acc_matrix'))}" for name, r in d["runs"].items() if r.get("acc_matrix")]
+    checks = []
+    for name, r in d["runs"].items():
+        mats = r.get("protocol_matrices") or {}
+        which = "oracle_zeroshot" if "oracle_zeroshot" in mats else r.get("main_protocol")
+        mat = mats.get("oracle_zeroshot") or r.get("acc_matrix")
+        if mat:
+            checks.append(f"{name}: {invariance(mat)} [{which}]")
     if checks:
-        lines += ["", "Cột đã học bất biến theo Bảng 8 (protocol chính): " + "; ".join(checks)]
+        lines += ["", "Cột đã học bất biến theo Bảng 8 (kiểm tra trên oracle_zeroshot; router có thể đổi quyết định giữa các hàng): " + "; ".join(checks)]
     lines += ["", "**Kết luận:** _(điền tay)_", ""]
     return "\n".join(lines) + "\n"
 

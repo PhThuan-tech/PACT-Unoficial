@@ -41,6 +41,8 @@ def load_runs(runs_dir):
     for path in sorted(glob.glob(os.path.join(runs_dir, "*.json"))):
         with open(path, encoding="utf-8") as f:
             d = json.load(f)
+        if d.get("duplicate_of"):  # a re-run of the same config / seed (marked by hand), not an extra seed
+            continue
         for name, run in (d.get("runs") or {}).items():
             kind = kind_of(run)
             seed = (run.get("key_config") or {}).get("seed")
