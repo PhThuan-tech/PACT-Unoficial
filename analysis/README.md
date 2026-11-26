@@ -63,3 +63,39 @@ Cần `state.pt` và `config.yaml` của run (GPU). In bảng zero-shot / latest
 ## So sánh PACT và isolation (`tools/compare_runs.py`)
 
 Đọc `experiments/runs/*.json` (do `tools/log_run.py` ghi), ghép cặp PACT / isolation cùng preset và seed, tính chênh Last của `oracle_zeroshot`, Transfer so với zero-shot, rồi áp quy tắc quyết định (dưới +0.5 và cùng dấu: ràng buộc không đóng góp; trên +1.0 và cùng dấu: có giá trị; còn lại: chưa kết luận). Cảnh báo nếu hai run dùng bản code khác nhau. Test: `python tests/compare_runs_test.py`.
+
+## Giai đoạn A: đánh giá lại theo nhánh lúc test (`reeval_branch.py`)
+
+Câu hỏi: nhánh cond (trung bình adapter 1..k) có "pha loãng" adapter của task đang đánh giá không? Đây có phải nguyên nhân khiến các task cuối (StanfordCars, SUN397) lệch xa paper nhất?
+
+```bash
+python analysis/reeval_branch.py --run-dir outputs/pact_s42 --max-samples 2000 --set data_root=... model.pretrained=...
+```
+
+Script cần `state.pt` và `config.yaml` của run, và chạy trên GPU (khoảng 10 phút trên một L4). Nó đánh giá lại ba biến thể:
+- `cond/cond`: cách run đã báo cáo.
+- `marg/marg`: chỉ adapter k, head marg.
+- `marg/cond`: chỉ adapter k, head cond. Biến thể này dành cho iso, vì iso không train head marg.
+
+Kết quả gồm Transfer / Avg / Last (`oracle_zeroshot`, `oracle_latest`) và độ chính xác ngay sau khi học từng task, ghi vào `<run>/reeval_branch.json`. Đặt `--max-samples 0` thì `cond/cond` trùng đúng `results.json` của run. Test: `python tests/reeval_branch_test.py`.
+
+Với `pact_s42` và `iso_s42` (đã chạy xong): mở một notebook Kaggle, gắn output của version đã chạy (output này có `state.pt`) cùng `pact-code` và dữ liệu, chạy ô 1–5 của notebook rồi chạy lệnh trên với `--run-dir` trỏ vào thư mục run trong `/kaggle/input/...`.
+
+## Giai đoạn B: notebook `kaggle/pact_phase_b.ipynb`
+
+Tạo bằng `python kaggle/make_notebook.py kaggle/pact_phase_b.ipynb --phase-b`. Lệnh `tools/prepare_upload.py` cũng chép file này vào `dist/`.
+
+Notebook chạy preset mid (8 dataset, 2000 iteration mỗi task) với lr 5e-5 và seed 42. Có 4 run, mỗi run 1 GPU, chạy song song:
+
+| run | so với `pact_base` |
+|---|---|
+| `pact_base` | baseline |
+| `iso_base` | bỏ L_marg và L_pa |
+| `pact_late` | α̃ bật ở 60% |
+| `pact_softpa` | `pa_sigma_rel` = 0.05 |
+
+`pact_late` phải đặt thêm `latest_frac = 0.8`. Nếu không, deadline 50% sẽ bật công tắc trước khi hết warmup.
+
+Sau khi train xong:
+- Ô 8c chạy giai đoạn A cho mọi run.
+- Ô 10b in bảng: Δ Transfer và Δ Last so với `pact_base`, độ chính xác ngay sau khi học từng task, và Last theo từng nhánh.

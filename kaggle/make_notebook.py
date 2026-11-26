@@ -486,6 +486,135 @@ md(r"""
 `train.batch_size` (mặc định 64) là batch **toàn cục**, chia đều cho các GPU. ViT không có BatchNorm nên chạy 2 hay 4 GPU vẫn tối ưu cùng một hàm mục tiêu như 1 GPU, chỉ khác thứ tự lấy mẫu ngẫu nhiên. Nếu CPU nạp ảnh không kịp (`GPU-Util` trong `nvidia-smi` thấp), thêm GPU cho một cấu hình sẽ không nhanh hơn; khi đó nên chạy nhiều cấu hình song song.
 """)
 
+# ----------------------------------------------------------------------------- phase B variant
+# python kaggle/make_notebook.py kaggle/pact_phase_b.ipynb --phase-b
+# Same pipeline, but: preset mid (8 datasets), 4 runs x 1 GPU in parallel (lr 5e-5, seed 42), each changing ONE
+# factor against pact_base; afterwards every run is re-evaluated with the cond / marg branches (phase A,
+# analysis/reeval_branch.py) on its own GPU, and a comparison table is printed.
+PHASE_B = "--phase-b" in sys.argv
+
+
+def _cell(marker):
+    hits = [i for i, c in enumerate(cells) if marker in c["source"]]
+    assert len(hits) == 1, (marker, hits)
+    return hits[0]
+
+
+def _replace(i, old, new):
+    assert old in cells[i]["source"], (i, old[:60])
+    cells[i]["source"] = cells[i]["source"].replace(old, new)
+
+
+def _insert_after(i, kind, src):
+    cells.insert(i + 1, {"cell_type": kind, "metadata": {}, **({"execution_count": None, "outputs": []}
+                                                              if kind == "code" else {}),
+                         "source": src.strip("\n")})
+
+
+if PHASE_B:
+    cells[0]["source"] = (
+        "# PACT – giai đoạn B: thu hẹp khoảng cách với paper (preset mid, 4 run song song)\n\n"
+        "Mỗi run đổi **một** yếu tố so với `pact_base` (lr 5e-5, seed 42, 8 dataset, 2000 iter/task):\n\n"
+        "| run | thay đổi | nguyên nhân kiểm |\n|---|---|---|\n"
+        "| `pact_base` | PACT, lr 5e-5 | baseline mới |\n"
+        "| `iso_base` | bỏ L_marg, L_pa | ràng buộc đóng góp bao nhiêu ở lr mới |\n"
+        "| `pact_late` | α̃ bật ở 60% thay vì 20% | ràng buộc bật quá sớm |\n"
+        "| `pact_softpa` | `pa_sigma_rel` 0.022 → 0.05 | L_pa kìm quá mạnh |\n\n"
+        "Sau khi train, ô 8c đánh giá lại mọi run bằng nhánh `cond` và `marg` (giai đoạn A, "
+        "`analysis/reeval_branch.py`), ô 10b in bảng so sánh. Chạy: *Save Version → Save & Run All* "
+        "(khoảng 3.5–4 giờ, 4×L4).\n\n---\n\n" + cells[0]["source"])
+
+    i = _cell("# ===================== CẤU HÌNH")
+    src = cells[i]["source"]
+    a, b = src.index("PRESET = "), src.index("RESUME_FROM = ")
+    cells[i]["source"] = src[:a] + '''PRESET = "mid"           # giai đoạn B: 8 dataset, 2000 iter/task (rẻ hơn full khoảng một nửa)
+GPUS_PER_RUN = 1         # 4 run x 1 GPU, chạy song song trên 4xL4
+LR = ["train.lr=5e-5", "seed=42"]   # lr đã chốt sau pilot; giữ giống nhau ở mọi run
+ALL_EXPERIMENTS = [      # mỗi run đổi đúng MỘT yếu tố so với pact_base
+    ("pact_base",   "configs/mtil_order1.yaml",                 [*LR]),
+    ("iso_base",    "configs/analysis/isolation_baseline.yaml", [*LR]),
+    # latest_frac phải >= warmup_frac, nếu không công tắc bật theo deadline 50% trước khi hết warmup
+    ("pact_late",   "configs/mtil_order1.yaml",                 [*LR, "pact.schedule.warmup_frac=0.6",
+                                                                  "pact.schedule.latest_frac=0.8"]),
+    ("pact_softpa", "configs/mtil_order1.yaml",                 [*LR, "pact.pa_sigma_rel=0.05"]),
+]
+RUN_ONLY = None          # None = chạy cả 4 (cần 4 GPU); hoặc danh sách tên run
+EXPERIMENTS = [e for e in ALL_EXPERIMENTS if RUN_ONLY is None or e[0] in RUN_ONLY]
+assert EXPERIMENTS, f"RUN_ONLY={RUN_ONLY} không khớp tên run nào"
+''' + src[b:]
+    _replace(i, "RUN_ZERO_SHOT_CHECK = False", "RUN_ZERO_SHOT_CHECK = False   # zero-shot đã kiểm (Khánh, 25/11)")
+
+    j = _cell("EXTRACT_ROUTER_FEATURES = True")
+    _replace(j, "EXTRACT_ROUTER_FEATURES = True", "EXTRACT_ROUTER_FEATURES = False   # giai đoạn B: không cần")
+    _insert_after(j, "code", r'''
+# ===================== 8c. Giai đoạn A: đánh giá lại mọi run bằng nhánh cond / marg =====================
+# Mỗi run trên GPU riêng (song song), 2000 ảnh test/dataset. Ghi outputs/<run>/reeval_branch.json (nằm trong zip).
+#   cond/cond: trung bình adapter 1..k, head cond (như run đã báo cáo)
+#   marg/marg: chỉ adapter k, head marg  |  marg/cond: chỉ adapter k, head cond (iso không train head marg)
+RUN_REEVAL = True
+if RUN_REEVAL:
+    procs = {}
+    for i, (name, _, _) in enumerate(EXPERIMENTS):
+        run_dir = os.path.join(OUT, name)
+        if not os.path.exists(os.path.join(run_dir, "state.pt")):
+            print(f"[{name}] không có state.pt, bỏ qua"); continue
+        log_f = open(os.path.join(run_dir, "reeval_branch.log"), "w")
+        cmd = [sys.executable, "analysis/reeval_branch.py", "--run-dir", run_dir, "--max-samples", "2000",
+               "--set", *COMMON]
+        procs[name] = (subprocess.Popen(cmd, cwd=REPO, stdout=log_f, stderr=subprocess.STDOUT,
+                                        env={**os.environ, "CUDA_VISIBLE_DEVICES": str(i % max(n_gpu, 1))}), log_f)
+        print(f"[{name}] reeval trên GPU {i % max(n_gpu, 1)}")
+    for name, (p, log_f) in procs.items():
+        p.wait(); log_f.close()
+        print(f"\n===== {name} (exit {p.returncode})")
+        print("".join(open(os.path.join(OUT, name, "reeval_branch.log")).readlines()[-22:]))
+''')
+
+    k = _cell("# ===================== 10. Kết quả")
+    _insert_after(k, "code", r'''
+# ===================== 10b. So sánh giai đoạn B (mỗi run so với pact_base) =====================
+def load(name, fname="results.json"):
+    path = os.path.join(OUT, name, fname)
+    return json.load(open(path)) if os.path.exists(path) else None
+
+base = load("pact_base")
+print(f"{'run':13s}{'Transfer(o_latest)':>20s}{'Last(oracle)':>14s}{'Avg(o_latest)':>15s}{'Δ Transfer':>12s}{'Δ Last':>9s}")
+for name, _, _ in EXPERIMENTS:
+    r = load(name)
+    if not r: print(f"{name:13s} chưa có kết quả"); continue
+    t = r["protocols"]["oracle_latest"]["summary"]; o = r["protocols"]["oracle_zeroshot"]["summary"]
+    line = f"{name:13s}{t['Transfer']:20.2f}{o['Last']:14.2f}{t['Avg']:15.2f}"
+    if base and name != "pact_base":
+        bt = base["protocols"]["oracle_latest"]["summary"]; bo = base["protocols"]["oracle_zeroshot"]["summary"]
+        line += f"{t['Transfer'] - bt['Transfer']:+12.2f}{o['Last'] - bo['Last']:+9.2f}"
+    print(line)
+zs = base["zero_shot"] if base else None
+if zs: print(f"{'zero-shot':13s}{sum(zs[1:]) / (len(zs) - 1):20.2f}   (Transfer của CLIP gốc trên cùng thứ tự)")
+
+print("\nĐộ chính xác ngay sau khi học (đường chéo oracle_zeroshot):")
+runs = [(n, load(n)) for n, _, _ in EXPERIMENTS]
+runs = [(n, r) for n, r in runs if r]
+if runs:
+    order = runs[0][1]["order"]
+    print(f"{'dataset':14s}" + "".join(f"{n:>13s}" for n, _ in runs))
+    for j, d in enumerate(order):
+        print(f"{d:14s}" + "".join(f"{r['protocols']['oracle_zeroshot']['acc_matrix'][j][j]:13.2f}" for _, r in runs))
+
+print("\nGiai đoạn A (2000 ảnh test/dataset): Last theo nhánh lúc test")
+print(f"{'run':13s}{'cond/cond':>11s}{'marg/marg':>11s}{'marg/cond':>11s}")
+for name, _, _ in EXPERIMENTS:
+    rb = load(name, "reeval_branch.json")
+    if not rb: print(f"{name:13s} chưa có reeval_branch.json"); continue
+    vals = [rb["results"].get(v, {}).get("summary", {}).get("oracle_zeroshot", {}).get("Last") for v in
+            ("cond/cond", "marg/marg", "marg/cond")]
+    print(f"{name:13s}" + "".join(f"{x:11.2f}" if x is not None else f"{'-':>11s}" for x in vals))
+print("\nĐọc: Δ Last > 0 mà Δ Transfer không giảm -> thay đổi đó thu hẹp khoảng cách. marg/* > cond/cond rõ rệt ->"
+      " nhánh cond pha loãng adapter, cách đánh giá của paper có thể là marg.")
+''')
+
+    m = _cell("INCLUDE_CHECKPOINTS = ")
+    _replace(m, 'INCLUDE_CHECKPOINTS = ["pact_s42"]', 'INCLUDE_CHECKPOINTS = []   # giai đoạn B: state.pt vẫn nằm trong tab Output')
+
 nb = {"cells": cells,
       "metadata": {"kernelspec": {"display_name": "Python 3", "language": "python", "name": "python3"},
                    "language_info": {"name": "python"}},

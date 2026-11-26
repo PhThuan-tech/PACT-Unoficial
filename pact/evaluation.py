@@ -47,6 +47,9 @@ class MTILEvaluator:
         if unknown:
             raise ValueError(f"unknown eval.protocols {sorted(unknown)}; choose from {PROTOCOLS}")
         self.branch = self.ecfg.get("branch", "cond")
+        # head used with the learned heads; defaults to the feature branch (cond -> cond head).
+        # analysis/reeval_branch.py sets it to evaluate e.g. marg features with the cond head.
+        self.head_branch = self.ecfg.get("head_branch") or self.branch
         self.counts = {}       # (name, k, head) -> per-batch correct counts (np.int64)
         self.sizes = {}        # name -> per-batch sample counts
         self.batch_feats = {}  # name -> per-batch mean of frozen-CLIP image features (B, D)
@@ -74,7 +77,7 @@ class MTILEvaluator:
         feats = None
         autocast, _ = amp_context(self.device, self.ecfg.get("amp", False))
         allow_tf32()
-        weights = (self.model.head_weights(head, self.branch) if head > 0
+        weights = (self.model.head_weights(head, self.head_branch) if head > 0
                    else self.data[name]["text"].to(self.device))
         model = self.model
         model.eval()
