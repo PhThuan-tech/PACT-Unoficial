@@ -63,6 +63,14 @@ for t, n in enumerate(names):
 
 res = evaluate_variants(model, data, names, cfg, torch.device("cpu"))
 assert res["cond/cond"]["rows"] == ref, "cond/cond must reproduce the training-time evaluation"
+# oracle_hybrid = learned columns of marg/marg (oracle_zeroshot) + unseen columns of cond/cond (oracle_latest)
+hyb = evaluate_variants(model, data, names, cfg, torch.device("cpu"), variants=("cond/cond",),
+                        protocols=("oracle_hybrid",))["cond/cond"]["rows"]["oracle_hybrid"]
+mm = res["marg/marg"]["rows"]["oracle_zeroshot"]; cl = ref["oracle_latest"]
+for i in range(3):
+    for j in range(3):
+        assert hyb[i][j] == (mm[i][j] if j <= i else cl[i][j]), (i, j)
+print("oracle_hybrid = marg (learned) + cond latest (unseen): OK")
 for v, r in res.items():
     m = r["rows"]["oracle_zeroshot"]
     assert all(m[i][j] == m[j][j] for i in range(3) for j in range(i + 1)), f"{v}: learned columns changed"

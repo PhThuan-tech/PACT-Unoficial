@@ -13,8 +13,9 @@ being evaluated? Snapshot k evaluated with
     marg/cond   adapter k only, cond head k               (for isolation runs: their marg head is never trained)
 Unseen datasets always use the frozen text head; only the feature branch changes there.
 
-Protocols: oracle_zeroshot (Last / Avg per learned task, task id known) and oracle_latest (adds Transfer of the
-latest model on unseen data). Zero-shot passes (snapshot 0) are shared between variants.
+Protocols: oracle_zeroshot (Last / Avg per learned task, task id known), oracle_latest (adds Transfer of the
+latest model on unseen data) and oracle_hybrid (learned data via marg/marg, unseen via the variant's branch; read
+it on cond/cond). Zero-shot passes (snapshot 0) are shared between variants.
 Results: <run-dir>/reeval_branch.json plus printed tables (per variant Transfer / Avg / Last, and the accuracy
 right after learning each task, with the paper's supp. Table 8 when the order is the full Order-I).
 Use --max-samples 0 for full test sets: cond/cond then reproduces the run's own results.json exactly.
@@ -83,8 +84,8 @@ def main():
     ap.add_argument("--run-dir", required=True)
     ap.add_argument("--max-samples", type=int, default=2000, help="test images per dataset (0 = all)")
     ap.add_argument("--variants", nargs="*", default=list(VARIANTS), choices=list(VARIANTS))
-    ap.add_argument("--protocols", nargs="*", default=["oracle_zeroshot", "oracle_latest"],
-                    choices=["oracle_zeroshot", "oracle_latest"])
+    ap.add_argument("--protocols", nargs="*", default=["oracle_zeroshot", "oracle_latest", "oracle_hybrid"],
+                    choices=["oracle_zeroshot", "oracle_latest", "oracle_hybrid"])
     ap.add_argument("--set", nargs="*", default=[], help="overrides, same as pact.run_mtil")
     args = ap.parse_args()
     import torch

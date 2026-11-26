@@ -578,7 +578,7 @@ def load(name, fname="results.json"):
     return json.load(open(path)) if os.path.exists(path) else None
 
 base = load("pact_base")
-print(f"{'run':13s}{'Transfer(o_latest)':>20s}{'Last(oracle)':>14s}{'Avg(o_latest)':>15s}{'Δ Transfer':>12s}{'Δ Last':>9s}")
+print(f"{'run':13s}{'Transfer(o_latest)':>20s}{'Last(oracle)':>14s}{'Avg(o_latest)':>15s}{'Δ Transfer':>12s}{'Δ Last':>9s}{'Last(hybrid)':>14s}")
 for name, _, _ in EXPERIMENTS:
     r = load(name)
     if not r: print(f"{name:13s} chưa có kết quả"); continue
@@ -587,6 +587,10 @@ for name, _, _ in EXPERIMENTS:
     if base and name != "pact_base":
         bt = base["protocols"]["oracle_latest"]["summary"]; bo = base["protocols"]["oracle_zeroshot"]["summary"]
         line += f"{t['Transfer'] - bt['Transfer']:+12.2f}{o['Last'] - bo['Last']:+9.2f}"
+    else:
+        line += f"{'':12s}{'':9s}"
+    hy = r["protocols"].get("oracle_hybrid", {}).get("summary")
+    line += f"{hy['Last']:14.2f}" if hy else f"{'-':>14s}"
     print(line)
 zs = base["zero_shot"] if base else None
 if zs: print(f"{'zero-shot':13s}{sum(zs[1:]) / (len(zs) - 1):20.2f}   (Transfer của CLIP gốc trên cùng thứ tự)")
