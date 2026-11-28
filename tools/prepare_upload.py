@@ -177,6 +177,10 @@ def main():
         sys.exit(f"missing in {kit}: {missing} (run without --skip-clip / --skip-wheels)")
 
     shutil.copy2(os.path.join(ROOT, "kaggle", "pact_demo.ipynb"), args.dist)
+    phase_b = os.path.join(ROOT, "kaggle", "pact_phase_b.ipynb")  # optional second notebook (gap analysis)
+    if os.path.exists(phase_b):
+        shutil.copy2(phase_b, args.dist)
+        print(f"[ok] {os.path.join(args.dist, 'pact_phase_b.ipynb')}")
     code_zip = os.path.join(args.dist, "pact-code.zip")
     names = make_kit_zip(kit, code_zip, parts=("code", "wheels"))
     print(f"[ok] {code_zip}: {os.path.getsize(code_zip) / 2**20:.1f} MB, "

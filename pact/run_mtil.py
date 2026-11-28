@@ -133,9 +133,16 @@ def main():
         evaluator.load_state_dict(state.get("evaluator"))
         acc = {p: state["acc"].get(p, []) for p in protocols}
         zero_shot = state.get("zero_shot")
-        done = len(acc[protocols[0]])
-        if any(len(v) != done for v in acc.values()):
-            raise SystemExit("eval.protocols changed since the checkpoint: keep the same list")
+        done = max(len(v) for v in acc.values())
+        missing = [p for p, v in acc.items() if len(v) != done]
+        if missing:  # protocol added after the checkpoint: recompute its rows (snapshots are frozen)
+            if any(acc[p] for p in missing) or ("router" in missing and not evaluator.prototypes):
+                raise SystemExit("eval.protocols changed since the checkpoint: keep the same list")
+            for t in range(1, done + 1):
+                rows, _ = evaluator.row(t)
+                for p in missing:
+                    acc[p].append(rows[p])
+            log({"msg": f"recomputed protocols {missing} for {done} finished tasks"})
         log({"msg": f"resumed after {done} tasks"})
     elif cfg["eval"]["zero_shot_row"]:
         zero_shot = evaluator.zero_shot_row()

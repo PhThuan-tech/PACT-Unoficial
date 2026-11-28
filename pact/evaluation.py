@@ -12,6 +12,8 @@ computed from the same run (config `eval.protocols`):
     oracle_zeroshot learned -> own snapshot (task id known); unseen -> frozen CLIP
     oracle_latest   learned -> own snapshot; unseen -> latest model
     latest          everything through the latest model (former behaviour, no task id)
+    oracle_hybrid   learned -> own snapshot through the marginal branch (adapter k alone, marg head k);
+                    unseen -> latest model (cond). Phase B: avoids diluting adapter k (+1.6 Last, mid)
 
 Everything reduces to "snapshot k on dataset j with head h" (k = 0: frozen CLIP). Snapshots
 are frozen once their task is over, so their per-batch correct counts are cached and reused
@@ -32,7 +34,7 @@ from torch.utils.data import DataLoader, Subset
 from . import distributed as dist_utils
 from .engine import allow_tf32, amp_context
 
-PROTOCOLS = ("router", "oracle_zeroshot", "oracle_latest", "latest")
+PROTOCOLS = ("router", "oracle_zeroshot", "oracle_latest", "latest", "oracle_hybrid")
 
 
 class MTILEvaluator:
@@ -47,7 +49,11 @@ class MTILEvaluator:
         if unknown:
             raise ValueError(f"unknown eval.protocols {sorted(unknown)}; choose from {PROTOCOLS}")
         self.branch = self.ecfg.get("branch", "cond")
+        # head used with the learned heads; defaults to the feature branch (cond -> cond head).
+        # analysis/reeval_branch.py sets it to evaluate e.g. marg features with the cond head.
+        self.head_branch = self.ecfg.get("head_branch") or self.branch
         self.counts = {}       # (name, k, head) -> per-batch correct counts (np.int64)
+        self.counts_marg = {}  # same through the marginal branch + marg head (oracle_hybrid)
         self.sizes = {}        # name -> per-batch sample counts
         self.batch_feats = {}  # name -> per-batch mean of frozen-CLIP image features (B, D)
         self.prototypes = []   # task k-1 -> (normalised mean feature (D,), threshold)
@@ -59,8 +65,11 @@ class MTILEvaluator:
         return [(b * bs, min((b + 1) * bs, n)) for b in range(math.ceil(n / bs))]
 
     @torch.no_grad()
-    def _pass(self, name, k, head):
-        """Per-batch correct counts of snapshot k with head `head` (0 = text) on `name`."""
+    def _pass(self, name, k, head, branch=None, head_branch=None):
+        """Per-batch correct counts of snapshot k with head `head` (0 = text) on `name`.
+
+        branch / head_branch default to the evaluator's (eval.branch / eval.head_branch)."""
+        branch, head_branch = branch or self.branch, head_branch or self.head_branch
         ds = self.data[name]["test"]
         batches = self._batches(len(ds))
         mine = list(range(dist_utils.rank(), len(batches), dist_utils.world_size()))
@@ -74,7 +83,7 @@ class MTILEvaluator:
         feats = None
         autocast, _ = amp_context(self.device, self.ecfg.get("amp", False))
         allow_tf32()
-        weights = (self.model.head_weights(head, self.branch) if head > 0
+        weights = (self.model.head_weights(head, head_branch) if head > 0
                    else self.data[name]["text"].to(self.device))
         model = self.model
         model.eval()
@@ -82,7 +91,7 @@ class MTILEvaluator:
             for b, (images, labels) in zip(mine, loader):
                 images, labels = images.to(self.device), labels.to(self.device)
                 with autocast:
-                    f = model.encode_image(images, self.branch)
+                    f = model.encode_image(images, branch)
                     logits = f @ weights.to(f.dtype).t()
                 counts[b] = (logits.argmax(-1) == labels).sum().item()
                 sizes[b] = labels.numel()
@@ -107,6 +116,15 @@ class MTILEvaluator:
 
     def accuracy(self, name, k, head=0):
         return 100.0 * self.counts_for(name, k, head).sum() / max(self.sizes[name].sum(), 1)
+
+    def marg_accuracy(self, name, k, head):
+        """Snapshot k through the marginal branch (adapter k only) with the marg head of task `head`.
+
+        Used by `oracle_hybrid`. Cached separately from the default branch (frozen snapshots)."""
+        key = (name, int(k), int(head))
+        if key not in self.counts_marg:
+            self.counts_marg[key] = self._pass(name, k, head, branch="marg", head_branch="marg")
+        return 100.0 * self.counts_marg[key].sum() / max(self.sizes[name].sum(), 1)
 
     def _head(self, j, k):
         """Head for dataset index j (1-based) under snapshot k: its own learned head if the
@@ -187,6 +205,10 @@ class MTILEvaluator:
                     acc = own if learned else self.accuracy(name, 0, 0)
                 elif p == "oracle_latest":
                     acc = own if learned else self.accuracy(name, t, 0)
+                elif p == "oracle_hybrid":
+                    # learned -> adapter k alone + marg head k (no averaging with older adapters);
+                    # unseen -> latest model, default branch (cond), text head
+                    acc = self.marg_accuracy(name, j, self._head(j, j)) if learned                         else self.accuracy(name, t, 0)
                 elif p == "latest":
                     acc = self.accuracy(name, t, self._head(j, t))
                 else:  # router
@@ -204,6 +226,7 @@ class MTILEvaluator:
     # ------------------------------------------------------------------ checkpoint
     def state_dict(self):
         return {"counts": {"|".join(map(str, k)): v for k, v in self.counts.items()},
+                "counts_marg": {"|".join(map(str, k)): v for k, v in self.counts_marg.items()},
                 "sizes": self.sizes, "batch_feats": self.batch_feats,
                 "prototypes": self.prototypes, "router_log": self.router_log,
                 "batch_size": self.ecfg["batch_size"]}
@@ -221,4 +244,7 @@ class MTILEvaluator:
         for key, v in state["counts"].items():
             name, k, head = key.rsplit("|", 2)
             self.counts[(name, int(k), int(head))] = v
+        for key, v in state.get("counts_marg", {}).items():
+            name, k, head = key.rsplit("|", 2)
+            self.counts_marg[(name, int(k), int(head))] = v
         self.sizes, self.batch_feats = state["sizes"], state["batch_feats"]

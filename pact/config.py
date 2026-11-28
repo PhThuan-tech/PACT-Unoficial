@@ -117,7 +117,9 @@ DEFAULTS = {
         #   oracle_zeroshot: learned -> own snapshot (task id known); unseen -> frozen CLIP
         #   oracle_latest:   learned -> own snapshot; unseen -> latest model
         #   latest:          everything through the latest model (former repo behaviour)
-        "protocols": ["router", "oracle_latest", "oracle_zeroshot", "latest"],
+        #   oracle_hybrid:   learned -> own snapshot via the marginal branch (adapter k alone, marg head k);
+        #                    unseen -> latest model (phase B: the cond mean dilutes adapter k, -1.6 Last)
+        "protocols": ["router", "oracle_latest", "oracle_zeroshot", "latest", "oracle_hybrid"],
         "branch": "cond",         # ASSUMPTION: snapshot k uses the conditional branch (adapters 1..k)
         "batch_size": 128,
         "max_samples": None,      # e.g. 2000 for quick runs; None = full test sets
