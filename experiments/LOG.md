@@ -467,3 +467,52 @@ Chi tiết (so với `iso_s2026` cùng seed và `pact_s42`; chạy 4 GPU, các r
 
 **Kết luận:** đã đủ 4 run full (PACT và iso, seed 42 và 2026). Theo `tools/compare_runs.py`, chênh Last trung bình -3.88 và cùng dấu ở cả 2 seed, nên ràng buộc PACT (L_marg, L_pa) **không đóng góp vào Last** ở cấu hình lr 1e-5: nó đổi Last lấy Transfer (+2.8) nhưng chưa vượt được zero-shot. Bước tiếp theo: chạy full với lr 5e-5 và oracle_hybrid, vì giai đoạn B cho thấy hai thay đổi này thu hẹp khoảng cách.
 
+
+<!-- run:pact_results_full_20261127_1253 -->
+## pact_results_full_20261127_1253
+
+- **Preset:** full (11 dataset: Aircraft, Caltech101, CIFAR100, DTD, EuroSAT, Flowers, Food, MNIST, OxfordPet, StanfordCars, SUN397)
+- **Tạo lúc:** 2026-11-27 12:53:13 | GPU mỗi run: 4
+- **Code:** `20261127-1646-0a25c79+dirty-524af0df` (commit 0a25c79, nhánh analysis/phase-a-b, có thay đổi chưa commit)
+- **Exit code:** tất cả 0
+- **Ghi chú:** pact_lr5e5_s42, full, 4 GPU L4, seed 42, lr 5e-5, có oracle_hybrid (run full nền mới, Thuận; zip gốc lồng thư mục, đã nén lại phẳng để ghi log)
+
+### Phương pháp và thời gian
+
+| run | config | override thêm | thay đổi chính | thời gian train+eval |
+|---|---|---|---|---|
+| pact_lr5e5_s42 | configs/mtil_order1.yaml | seed=42 train.lr=5e-5 | pact.use_marg=True, pact.use_pa=True, adapter.gate_mode=layerwise, head.type=learned, train.lr=5e-05, train.iterations=3000, seed=42 | 2h36m |
+
+### Kết quả (Transfer / Avg / Last)
+
+| run | latest | oracle_hybrid | oracle_latest | oracle_zeroshot | router |
+|---|---|---|---|---|---|
+| pact_lr5e5_s42 | 68.74 / 74.58 / 82.20 | 68.74 / 78.30 / 88.03 | 68.74 / 77.75 / 86.83 | 69.47 / 78.12 / 86.83 | 68.94 / 74.90 / 81.73 |
+
+Last theo từng dataset (protocol chính):
+
+- **pact_lr5e5_s42** (router): Aircraft 62.17, Caltech101 97.06, CIFAR100 77.03, DTD 77.29, EuroSAT 89.20, Flowers 87.01, Food 91.29, MNIST 60.28, OxfordPet 94.14, StanfordCars 83.60, SUN397 79.92
+
+Cột đã học bất biến theo Bảng 8 (kiểm tra trên oracle_zeroshot; router có thể đổi quyết định giữa các hàng): pact_lr5e5_s42: có [oracle_zeroshot]
+
+Chi tiết (so với `pact_s42` / `pact_s2026` lr 1e-5 và `iso_s42` / `iso_s2026` lr 1e-5, cùng code trừ lr):
+
+- **lr 5e-5 tăng Last, giữ Transfer:** `oracle_zeroshot` Last 86.83 so với 83.74 (+3.09); `oracle_latest` Transfer 68.74 so với 68.63 (+0.11). Kết quả giai đoạn B (mid) chuyển được sang full.
+- **`oracle_hybrid` thêm +1.20 Last (88.03) mà không đổi Transfer.** Tăng nhiều ở các task sau: StanfordCars 83.60 → 87.64, CIFAR100 82.28 → 85.58, EuroSAT 94.93 → 97.61, MNIST 97.20 → 98.91, Food 91.29 → 92.00. Xác nhận pha loãng adapter ở nhánh cond trên preset full.
+- **So với isolation lr 1e-5 (87.64 / 65.82):** hybrid cao hơn +0.39 Last và +2.92 Transfer. Chưa so được với isolation ở lr 5e-5 (chưa chạy full); ở preset mid, iso lr 5e-5 vẫn hơn pact hybrid 2.3 Last nhưng Transfer thấp hơn 7.0.
+- **So với paper (71.76 / 81.05 / 90.54), dùng hybrid:** còn −3.02 Transfer, −2.75 Avg, −2.51 Last (trước đây −6.80 Last). Lệch Last lớn nhất: SUN397 −5.91, CIFAR100 −5.63, DTD −3.72, Aircraft −3.56, Flowers −3.11, StanfordCars −2.26; Caltech101 +0.52.
+- **Transfer vẫn dưới zero-shot 69.47 (−0.73).** Thấp nhất ở EuroSAT 52.86 (zero-shot 55.19), SUN397 63.36 (65.10), StanfordCars 63.04 (64.76); cao hơn ở MNIST (+1.55) và DTD (+0.78).
+- **Router của repo vẫn mất 5.1 Last** (81.73 so với 86.83): MNIST 60.28 (oracle 97.20), Flowers 87.01 (95.46), EuroSAT 89.20 (94.93), CIFAR100 77.03 (82.28).
+- **Thời gian:** 2h36m trên 4×L4.
+- **Thiếu `state.pt`** trong zip (chỉ có trong tab Output của Kaggle), cần tải riêng cho phân tích offline. Zip có `router_features.npz` (39.6 MB) cho phân tích router theo từng ảnh.
+
+**Phân tích offline trên checkpoint (28/11, `kaggle/pact_analysis.ipynb`, 4×L4, 2000 ảnh test/dataset, 80 phút; kết quả ở `experiments/artifacts/pact_results_full_20261127_1253/pact_lr5e5_s42/analysis_20261128/`):**
+
+- **`oracle_snapshot` (Transfer):** chọn snapshot tốt nhất cho dữ liệu chưa học (biết trước đáp án) chỉ đạt 69.89 so với zero-shot 69.43 (+0.46, trong nhiễu). Chỉ MNIST được lợi rõ (+2.95, 6/7 snapshot hơn zero-shot); DTD +0.9. Kết luận: không cách gửi dữ liệu chưa học sang snapshot nào nâng được Transfer vượt zero-shot; trần thực tế của Transfer là trả dữ liệu chưa học về CLIP (69.43), hiện mất 0.67 so với trần đó.
+- **`alignment_drift`:** với text đóng băng, đặc trưng ảnh của task đã học ở snapshot cuối chỉ đạt 66.18 (gần zero-shot), còn head học được đạt 81.85 (+15.7): phần lớn Last đến từ head, adapter không kéo ảnh lại gần text. Trên dữ liệu chưa học, Transfer giảm nhiều nhất ở EuroSAT (−2.24), SUN397 (−1.92), CIFAR100 (−1.60), StanfordCars (−1.24); tăng ở MNIST (+1.86), DTD (+0.83). Cosine ảnh–text đúng lớp chỉ giảm 0.003–0.03; mức giảm độ chính xác tương quan vừa với độ giảm `pos` (r = 0.47) và `self_sim` (r = 0.48), không tương quan với modality gap (r = −0.17) hay CKA (r = 0.08). Ca nặng nhất: StanfordCars dưới snapshot 1 (chỉ adapter Aircraft) −6.8, EuroSAT dưới snapshot 2 −4.6. Chạy 77 phút, chủ yếu vì chưa bật TF32 (đã sửa sau lần chạy này).
+- **`probe_distance`:** probe Gaussian cho d 0.0027–0.0064, không τ nào tạo được cả melted lẫn frozen. Token ảnh thật cho d lớn hơn khoảng 10 lần (0.016–0.08), τ = 0.05 cho α trải 0.20–0.85. Ở cả hai, adapter cách nhau xa hơn cách MLP (contrast 1.5–1.7) và không có cụm theo domain như Hình 3 (Aircraft–StanfordCars không gần nhau; Food là "láng giềng gần nhất" của MNIST, OxfordPet, StanfordCars, SUN397). Theo token của chính domain, adapter lệch khỏi MLP mạnh hơn hẳn trung bình (Flowers 0.18 so với 0.05, DTD 0.17 so với 0.04, EuroSAT 0.11 so với 0.04), trừ Food (0.029), SUN397 (0.016), Caltech101 (0.039): ba adapter gần như không học thêm, khớp với giả thuyết dataset lớn nhận quá ít epoch (SUN397 thiếu 5.9 Last so với paper).
+- **`reeval_branch`:** marg/marg cho Last 87.75 (= hybrid), Transfer 66.38 (−2.4 so với cond). Dùng adapter k với head cond (marg/cond) làm Last tụt còn 82.76 (Flowers 74.2, StanfordCars 72.4): head gắn chặt với nhánh đã train cùng.
+- **`router_persample`:** như phân tích trước (cùng đặc trưng): Mahalanobis chọn đúng 92.6% ảnh đã học, nhưng vẫn gửi nhầm 75% ảnh Flowers và 62.5% ảnh MNIST chưa học sang snapshot. Kết hợp với `oracle_snapshot`: mọi lần gửi nhầm dữ liệu chưa học đều là thiệt.
+
+**Kết luận:** đây là mốc so sánh mới của nhóm ở preset full: **68.74 / 78.30 / 88.03** (`oracle_hybrid`), 1 seed (nhiễu seed ở full khoảng ±0.05). lr 5e-5 và đánh giá task đã học qua nhánh marg thu hẹp khoảng cách Last với paper từ −6.8 xuống −2.5. Còn hai khoảng cách chưa giải thích được: Transfer dưới zero-shot và router mất 5.1 Last. Muốn kết luận ràng buộc PACT có lợi hay không ở lr 5e-5 cần thêm `iso_lr5e5_s42` full.
+
